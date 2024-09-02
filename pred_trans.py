@@ -37,7 +37,7 @@ class WeatherDataset(Dataset):
         return pressure
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, points_ds, context_len, patch_len, split='train'):
+    def __init__(self, points_ds, context_len, output_len, split='train'):
         full_length = len(points_ds)
         validation_start = floor(full_length * 0.8)
         train_stop = validation_start - context_len * 2
@@ -49,17 +49,17 @@ class TimeSeriesDataset(Dataset):
             self.points_ds = [points_ds[i] for i in range(test_start, full_length)]
         
         self.context_len = context_len
-        self.patch_len = patch_len
+        self.output_len = output_len
         
 
     def __len__(self):
         #remove context_len from __len__ so that we choose start points where
-        #where target = idx + context_len + patch_len is in self.points_ds
-        return len(self.points_ds) - self.context_len - self.patch_len
+        #where target = idx + context_len + output_len is in self.points_ds
+        return len(self.points_ds) - self.context_len - self.output_len
 
     def __getitem__(self, idx):
         series = self.points_ds[idx : idx + self.context_len]
-        target = self.points_ds[idx + self.context_len : idx + self.context_len + self.patch_len]
+        target = self.points_ds[idx + self.context_len : idx + self.context_len + self.output_len]
         
         series = torch.stack(series)
         target = torch.stack(target)
@@ -75,7 +75,7 @@ class ResidualBlock(nn.Module):
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
         self.residual = nn.Linear(input_dim, output_dim)
-        self.gelu = nn.GELU()
+        self.gelu = nn.GELU(approximate='tanh')
         self.dropout = nn.Dropout(dropout)
         
         self.apply_ln = apply_ln
@@ -95,7 +95,7 @@ class ResidualBlock(nn.Module):
             x = self.layer_norm(x)
         
         return x
-"""
+
 class MLPForecast(nn.Module):
     def __init__(self, context_len, patch_len, hidden_dim = None, dropout=0.0):
         super().__init__()
@@ -119,10 +119,18 @@ class MLPForecast(nn.Module):
         x = un_normalize(x, m, s)
         
         return x
-"""
+
 
 class TimeSeriesTransformer(nn.Module):
-    def __init__(self, context_len, patch_len, big_patch_len, output_patch_len, d_model, num_heads= 6, num_layers=10, dropout=0.1):
+    def __init__(self,
+                 context_len,
+                 patch_len,
+                 big_patch_len,
+                 output_patch_len,
+                 d_model,
+                 num_heads,
+                 num_layers,
+                 dropout):
         super().__init__()
         if context_len % patch_len != 0:
             raise Exception("context_len needs to be a multiple of patch_len")
@@ -147,8 +155,8 @@ class TimeSeriesTransformer(nn.Module):
                                                dropout = dropout,
                                                apply_ln = False)
         self.patch_decoder = ResidualBlock(input_dim = d_model,
-                                output_dim = patch_len,
-                                hidden_dim = 128,
+                                output_dim = output_patch_len,
+                                hidden_dim = d_model,
                                 dropout = 0,
                                 apply_ln = False)
         
@@ -231,7 +239,7 @@ def normalized_mse(series, pred, target):
     
     return nn.MSELoss()(pred, target)
 
-def forecast(data, model, steps = 10):
+def forecast(data, model, steps=10):
     data = data.to(device)
     
     model.eval()
@@ -248,13 +256,17 @@ def forecast(data, model, steps = 10):
         data = data.detach().cpu().numpy()
             
         x = np.arange(len(data))    
+        
+        plt.figure(figsize=(16, 6))
+        
         plt.plot(x[:context_len], data[:context_len], color='blue', label='Recorded')
         plt.plot(x[context_len:], data[context_len:], color='orange', label='Forecast')
         
         plt.title('Forecast') 
         plt.legend()
-       
+        
         plt.show()
+
 
 
 def train(model, device, optimizer, dataloader):
@@ -265,22 +277,30 @@ def train(model, device, optimizer, dataloader):
     steps = 0
     cum_loss = 0
     
+    scaler = torch.amp.GradScaler()
+
     for _, (series, target) in enumerate(progress_bar):
         optimizer.zero_grad()
-        
         steps += 1
         
         series = series.to(device)
         target = target.to(device)
         
-        pred = model(series).squeeze()
-        
-        loss = normalized_mse(series, pred, target)
-        losses.append(loss.item())
-        
-        loss.backward()
-        optimizer.step()
-        
+        with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_autocast):
+            pred = model(series).squeeze()
+            
+            loss = normalized_mse(series, pred, target)
+            losses.append(loss.item())
+            
+        if use_autocast:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
+            
         cum_loss += loss.item()
         progress_bar.set_postfix(running_loss = cum_loss/steps)
 
@@ -320,17 +340,17 @@ def test(model, device, optimizer, dataloader):
     print("\nValidation MSE: {}".format(cum_loss/steps))
 
 if __name__ == '__main__':
-    patch_len = 32
+    patch_len = 64
     output_patch_len = 128
-    big_patch_len = 32*8
-    context_len = patch_len * 64
-    d_model = 384
-    num_heads = 6
+    big_patch_len = patch_len * 8
+    context_len = patch_len * 64 * 2
+    d_model = 512
+    num_heads = 8
     num_layers = 6
     dropout = 0.1
     
-    learning_rate = 5e-4
-    batch_size = 64
+    learning_rate = 3e-4
+    batch_size = 128
     max_epochs = 1
     window_size = 100
     use_mps = True
@@ -342,15 +362,24 @@ if __name__ == '__main__':
         device = 'cuda'
     elif use_mps and torch.backends.mps.is_available():
         device = 'mps'
+        
+    use_autocast = device == 'cuda'
 
-    ds_train = TimeSeriesDataset(WeatherDataset(), context_len, patch_len, split = 'train')
-    ds_test = TimeSeriesDataset(WeatherDataset(), context_len, patch_len, split = 'test')
+    ds_train = TimeSeriesDataset(WeatherDataset(), context_len, output_patch_len, split = 'train')
+    ds_test = TimeSeriesDataset(WeatherDataset(), context_len, output_patch_len, split = 'test')
 
     dl_train = DataLoader(ds_train, batch_size = batch_size, shuffle = True)
     dl_test = DataLoader(ds_test, batch_size = batch_size, shuffle = True)
     
-    model = TimeSeriesTransformer(context_len, patch_len, big_patch_len, output_patch_len, d_model, num_heads, num_layers, dropout) #validation MSE 0.263
-    #model = MLPForecast(context_len, patch_len) #validation MSE: 0.51
+    model = TimeSeriesTransformer(context_len,
+                                  patch_len,
+                                  big_patch_len,
+                                  output_patch_len,
+                                  d_model,
+                                  num_heads,
+                                  num_layers,
+                                  dropout) #validation MSE 0.249
+    #model = MLPForecast(context_len, patch_len) #validation MSE: ?
     
     optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
