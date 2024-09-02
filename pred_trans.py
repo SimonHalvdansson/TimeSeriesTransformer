@@ -28,11 +28,7 @@ class WeatherDataset(Dataset):
 
     def __getitem__(self, idx):
         pressure = self.frame.iloc[idx, 3]
-        
-        if isinstance(pressure, pd.Series):
-            pressure = pressure.values[0]
-            print(idx)
-            
+                    
         pressure = torch.tensor(pressure, dtype=torch.float32)
         return pressure
 
@@ -277,7 +273,7 @@ def train(model, device, optimizer, dataloader):
     steps = 0
     cum_loss = 0
     
-    scaler = torch.amp.GradScaler()
+    scaler = torch.amp.GradScaler() if use_autocast else None
 
     for _, (series, target) in enumerate(progress_bar):
         optimizer.zero_grad()
@@ -285,12 +281,13 @@ def train(model, device, optimizer, dataloader):
         
         series = series.to(device)
         target = target.to(device)
-        
+                   
         with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_autocast):
             pred = model(series).squeeze()
             
             loss = normalized_mse(series, pred, target)
             losses.append(loss.item())
+
             
         if use_autocast:
             scaler.scale(loss).backward()
@@ -340,20 +337,21 @@ def test(model, device, optimizer, dataloader):
     print("\nValidation MSE: {}".format(cum_loss/steps))
 
 if __name__ == '__main__':
-    patch_len = 64
+    patch_len = 128
     output_patch_len = 128
     big_patch_len = patch_len * 8
-    context_len = patch_len * 64 * 2
-    d_model = 512
-    num_heads = 8
-    num_layers = 6
+    context_len = patch_len * 64
+    d_model = 256
+    num_heads = 4
+    num_layers = 3
     dropout = 0.1
     
     learning_rate = 3e-4
-    batch_size = 128
+    batch_size = 16
     max_epochs = 1
     window_size = 100
     use_mps = True
+    use_autocast = True
     run = True
 
     device = 'cpu'
@@ -362,8 +360,8 @@ if __name__ == '__main__':
         device = 'cuda'
     elif use_mps and torch.backends.mps.is_available():
         device = 'mps'
-        
-    use_autocast = device == 'cuda'
+    
+    use_autocast = use_autocast and device == 'cuda'
 
     ds_train = TimeSeriesDataset(WeatherDataset(), context_len, output_patch_len, split = 'train')
     ds_test = TimeSeriesDataset(WeatherDataset(), context_len, output_patch_len, split = 'test')
@@ -378,7 +376,7 @@ if __name__ == '__main__':
                                   d_model,
                                   num_heads,
                                   num_layers,
-                                  dropout) #validation MSE 0.249
+                                  dropout) #validation MSE 0.244
     #model = MLPForecast(context_len, patch_len) #validation MSE: ?
     
     optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
@@ -401,11 +399,6 @@ if __name__ == '__main__':
     forecast(ds_test[123][0], model, 10)
 
 
-"""
-
-TODO: Only do full resolution on part of data!
-
-"""
 
 
 
