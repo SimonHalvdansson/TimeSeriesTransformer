@@ -1,0 +1,5 @@
+Time series transformer
+
+The task of time series prediction has recently seen a great deal of interest as the dominating tools have scaled up in parameters and complexity. Over the last 5 years transformers have emerged and developed into a cornerstone of modern natural language processing and computer vision - some would argue at the cost of more efficient methods.
+
+It is therefore no surprise the transformers have made a strong entry 
