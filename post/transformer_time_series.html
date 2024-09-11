@@ -23,10 +23,15 @@
 
 	<section class="blog centering">
 		<h1>An implementation of transformer-based time-series forecasting, inspired by TimesFM</h1>
+		<div class="subtitle monospace"> • By Simon Halvdansson&nbsp;|&nbsp;Sep. 2024&nbsp;|&nbsp;Reading time ~6 mins.</div>
 
 		<hr class="squiggly-line">
 		<p>
-			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. As a technical reading experience, it is meant to fall somewhere between reading the original paper <a target="_blank" href="https://arxiv.org/abs/2310.10688">"A decoder-only foundation model for time-series forecasting"</a> and trying to read the <a target="_blank" href="https://github.com/google-research/timesfm">source code</a>. Specifically, we will build out a simpler version of the TimesFM model step-by-step, starting from setting up dataloaders and ending with plotting autoregressive forecasting. Note that this is not meant as a general introduction to either PyTorch nor time-series forecasting and what is included is mostly a reflection of where I myself struggled.
+			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. As a technical reading experience, it is meant to fall somewhere between reading the original paper <a target="_blank" href="https://arxiv.org/abs/2310.10688">"A decoder-only foundation model for time-series forecasting"</a> and trying to read the <a target="_blank" href="https://github.com/google-research/timesfm">source code</a>. Specifically, we will build out a simpler version of the TimesFM model step-by-step, starting from setting up the dataloader. Note that this is not meant as a general introduction to either PyTorch nor time-series forecasting and what is included is mostly a reflection of what I myself found most interesting.
+		</p>
+
+		<p>
+			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that we have some wiggle room in exactly how we decode the data. We will explore this a bit in the end.
 		</p>
 
 		<p>
@@ -132,7 +137,7 @@
 		</table>
 
 	<p>
-		From it we see that we have readings for a few weather parameters with a one hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a <code>PyTorch Dataset</code> for this as follows. 
+		From it we see that we have readings for a few weather parameters with a one hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a PyTorch <code>Dataset</code> for this as follows. 
 	</p>
 
 	<div class="code_block" id="code_weather_dataset"></div>
@@ -141,15 +146,14 @@
 	    import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
 		const code = `
 class WeatherDataset(Dataset):
-    def __init__(self, ):
-        self.frame = pd.read_csv("data/data.csv")
+    def __init__(self):
+        self.frame = pd.read_csv('data.csv')
 
     def __len__(self):
         return len(self.frame)
 
     def __getitem__(self, idx):
         data = self.frame.iloc[idx, 3]
-            
         return torch.tensor(data, dtype=torch.float32)
     `;
 
@@ -212,6 +216,12 @@ class TimeSeriesDataset(Dataset):
 
 	<p>
 		Below is an example with <code>context_len = 2048</code> and <code>output_len = 128</code>.
+	</p>
+
+	<img class="figure" src="dataset_example.png"></img>
+
+	<p>
+		The <code>1024 + 128 = 1152</code> datapoints correspond to 48 days so the high frequency details are the day/night cycle and the lower frequency energy is likely small scale weather trends. We will return to this example later with predictions for comparison.
 	</p>
 
 	<hr class="squiggly-line">
@@ -424,8 +434,10 @@ def test(model, device, optimizer, dataloader):
 	</script>
 
 	<p>
-		Obviously
+		This model has <code>590&thinsp;464</code> parameters and trains to a test <code>MSE = 0.909</code> in <code>7s</code> on an RTX 3070. 
 	</p>
+
+	<img class="figure" src="mlp_prediction.png"></img>
 	
 
 	<hr class="squiggly-line">
@@ -448,12 +460,7 @@ def test(model, device, optimizer, dataloader):
 		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
 		const code = `
 class ResidualBlock(nn.Module):
-    def __init__(self,
-                 input_dim,
-                 output_dim,
-                 hidden_dim,
-                 dropout = 0.1,
-                 apply_ln = True):
+    def __init__(self, input_dim, output_dim, hidden_dim, dropout = 0.1, apply_ln = True):
         super().__init__()
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
@@ -488,7 +495,7 @@ class ResidualBlock(nn.Module):
 	</script>
 
 	<p>
-		Now we can use the encoder to go from a <code>(batch_size, context_len)</code> to a <code>(batch_size, patches, patch_len)</code> tensor.
+		Now we can use the encoder to go from a <code>(batch_size, context_len)</code> to a <code>(batch_size, patches, patch_len)</code> tensor by splitting up the input into vectors of length <code>patch_len</code> which are mapped to vectors of length <code>d_model</code>.
 	</p>
 
 	<div class="code_block" id="code_encoder"></div>
@@ -514,6 +521,11 @@ def encode_patches(self, x, patches, patch_len, encoder):
 			theme: 'rose-pine'
 		});
 	</script>
+
+	<p>
+		By calling this function with <code>encoder</code> a <code>ResidualBlock</code>
+	</p>
+
 
 
 	</section>

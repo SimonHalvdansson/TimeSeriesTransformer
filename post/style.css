@@ -375,6 +375,14 @@ h1 {
     color: #512725;
 }
 
+.blog .subtitle {
+    text-transform: uppercase;
+    font-weight: 900;
+    font-size: 15px;
+    margin-bottom: -3px;
+    font-family: 'Roboto Mono', monospace;
+}
+
 .blog p {
     font-size: 20px;
     line-height: 1.52em;
@@ -412,6 +420,14 @@ h1 {
     font-size: 15px;
     border-radius: 24px;
     padding-left: 24px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.blog .figure {
+    width: 120%;
+    margin-left: -10%;
+    margin-right: -10%;
+    border-radius: 16px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
 }
 
