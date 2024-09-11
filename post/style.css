@@ -19,8 +19,8 @@ body {
 }
 
 ::selection {
-    background: #ffb7b7; /* Background color of the selection */
-    color: #000000; /* Text color of the selection */
+    background: #ffb7b7;
+    color: #000000;
 }
 
 .about {
@@ -404,11 +404,12 @@ h1 {
     padding-left: 2px;
     padding-right: 2px;
     border-radius: 5px;
+    font-size: 17px;
     color: black;
 }
 
 .blog .code_block pre {
-    font-size: 19px;
+    font-size: 15px;
     border-radius: 24px;
     padding-left: 24px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -422,6 +423,7 @@ table {
   border-radius: 18px;
   overflow: hidden;
   color: black;
+  background-color: #DADDDA;
 }
 
 thead {

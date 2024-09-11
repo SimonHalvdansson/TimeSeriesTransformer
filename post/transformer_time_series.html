@@ -26,7 +26,7 @@
 
 		<hr class="squiggly-line">
 		<p>
-			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. As a technical reading experience, it is meant to fall somewhere between reading the original paper "<a target="_blank" href="https://arxiv.org/abs/2310.10688">A decoder-only foundation model for time-series forecasting</a>" and trying to read the <a target="_blank" href="https://github.com/google-research/timesfm">source code</a>. Specifically, we will build out a simpler version of the TimesFM model step-by-step, starting from setting up dataloaders and ending with plotting autoregressive forecasting. Note that this is not meant as a general introduction to either PyTorch nor time-series forecasting and what is included is mostly a reflection of where I myself struggled.
+			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. As a technical reading experience, it is meant to fall somewhere between reading the original paper <a target="_blank" href="https://arxiv.org/abs/2310.10688">"A decoder-only foundation model for time-series forecasting"</a> and trying to read the <a target="_blank" href="https://github.com/google-research/timesfm">source code</a>. Specifically, we will build out a simpler version of the TimesFM model step-by-step, starting from setting up dataloaders and ending with plotting autoregressive forecasting. Note that this is not meant as a general introduction to either PyTorch nor time-series forecasting and what is included is mostly a reflection of where I myself struggled.
 		</p>
 
 		<p>
@@ -132,7 +132,7 @@
 		</table>
 
 	<p>
-		From it we see that we have readings for a few weather parameters with a 1 hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a <code>PyTorch Dataset</code> for this as follows. 
+		From it we see that we have readings for a few weather parameters with a one hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a <code>PyTorch Dataset</code> for this as follows. 
 	</p>
 
 	<div class="code_block" id="code_weather_dataset"></div>
@@ -168,7 +168,7 @@ class WeatherDataset(Dataset):
 			<li>Get a <code>series</code> tensor of length <code>context_len</code> which should be the input to the model, and a <code>target</code> tensor of length <code>output_len</code> which is the desired output which we will use for the loss function.</li> 
 		</ul>
 		<p>
-		We choose for the test set to start after 80 % of the data points and a buffer zone of twice the <code>context_len</code>.
+		We choose for the test set to start after 80% of the data points and a buffer zone of twice the <code>context_len</code>.
 	</p>
 	<div class="code_block" id="code_timeseries_dataset"></div>
 
@@ -193,8 +193,6 @@ class TimeSeriesDataset(Dataset):
         self.output_len = output_len
         
     def __len__(self):
-        #remove context_len from __len__ so that we choose start points 
-        #where target = idx + context_len + output_len is in self.points_ds
         return len(self.points) - self.context_len - self.output_len
     
     def __getitem__(self, idx):
@@ -212,11 +210,15 @@ class TimeSeriesDataset(Dataset):
 		});
 	</script>
 
+	<p>
+		Below is an example with <code>context_len = 2048</code> and <code>output_len = 128</code>.
+	</p>
+
 	<hr class="squiggly-line">
 	<h2>MLP baseline and model generalities</h2>
 
 	<p>
-		Now we turn to developing the simple multilayer-perceptron model for the baseline. Our input data, the temperatures from the table, is not dimensionless and can significantly drift over time. For this reason it is beneficial to normalize each slice we let the model act on and then invert the normalization after the model has acted. To this end, we set up the following helper functions which takes inputs <code>x</code>of shape <code>(batch_size, len)</code>:
+		Now we turn to developing the simple multilayer-perceptron model for the baseline. Our input data, the temperatures from the table, is not dimensionless and can significantly drift over time. For this reason it is beneficial to normalize each slice we let the model act on and then invert the normalization after the model has acted. To this end, we set up the following helper functions which takes an input <code>x</code>of shape <code>(batch_size, len)</code>:
 	</p>
 
 	<div class="code_block" id="code_normalization"></div>
@@ -306,34 +308,50 @@ class MLPForecast(nn.Module):
 	</script>
 
 	<p>
-		This is basically all that is needed for this simple model. Below is the training code which is standard.
+		This is basically all that is needed for this simple model. Below is the training code which is standard with dynamic <code>device</code> selection and the <code>schedulefree.AdamWScheduleFree</code> optimizer from <a target="_blank" href="https://github.com/facebookresearch/schedule_free">Meta</a>.
 	</p>
 
-		<div class="code_block" id="code_MLP_train"></div>
+	<div class="code_block" id="code_MLP_train"></div>
 
 	<script type="module">
 		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
 		const code = `
-class MLPForecast(nn.Module):
-    def __init__(self, context_len, output_len):
-        super().__init__()
-                    
-        hidden_dim = output_len * 4
-        
-        self.fc1 = nn.Linear(context_len, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_len)
-        self.relu = nn.ReLU()
-        
-    def forward(self, x):
-        x, m, s = normalize(x)
-        
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-                
-        x = un_normalize(x, m, s)
-        
-        return x
+if __name__ == '__main__':
+    output_len = 128
+    context_len = 1024
+    
+    learning_rate = 3e-4
+    batch_size = 16
+    max_epochs = 1
+
+    device = 'cpu'
+
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif torch.backends.mps.is_available():
+        device = 'mps'
+    
+    weather_ds = WeatherDataset()
+
+    ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'train')
+    ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'test')
+
+    dl_train = DataLoader(ds_train, batch_size = batch_size, shuffle = True)
+    dl_test = DataLoader(ds_test, batch_size = batch_size, shuffle = True)
+    
+    model = MLPForecast(context_len, output_len)
+    
+    optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
+    model = model.to(device)
+    
+    losses = []
+    
+    for epoch in range(max_epochs):
+        print("--------Epoch {}--------".format(epoch + 1))
+        train(model, device, optimizer, dl_train)
+        test(model, device, optimizer, dl_test)
+
+    print("Training completed")
     `;
 
 		const foo = document.getElementById('code_MLP_train');
@@ -343,36 +361,154 @@ class MLPForecast(nn.Module):
 		});
 	</script>
 
+	<p>
+		The <code>train()</code> and <code>test()</code> functions with some <code>tqdm</code> and plotting niceties are defined as follows:
+	</p>
+
+	<div class="code_block" id="code_MLP_traintest"></div>
+
+	<script type="module">
+		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
+		const code = `
+def train(model, device, optimizer, dataloader):
+    model.train()
+    optimizer.train()
+    
+    progress_bar = tqdm(dataloader, desc="Training", leave=True)
+    cum_loss = 0
+
+    for step, (series, target) in enumerate(progress_bar):
+        optimizer.zero_grad()
+        
+        series = series.to(device)
+        target = target.to(device)
+                   
+        pred = model(series).squeeze()
+        
+        loss = normalized_mse(series, pred, target)
+        losses.append(loss.item())
+
+        loss.backward()
+        optimizer.step()
+            
+        cum_loss += loss.item()
+        progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
+    
+def test(model, device, optimizer, dataloader):
+    model.eval()
+    optimizer.eval()
+    
+    progress_bar = tqdm(dataloader, desc="Validating", leave=True)
+    
+    cum_loss = 0
+    
+    with torch.no_grad():
+        for step, (series, target) in enumerate(progress_bar):           
+            series = series.to(device)
+            target = target.to(device)
+            
+            pred = model(series).squeeze()
+            loss = normalized_mse(series, pred, target)
+            
+            cum_loss += loss.item()
+            progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
+                    
+    print("Validation MSE: {}".format(cum_loss/len(dataloader)))
+    `;
+
+		const foo = document.getElementById('code_MLP_traintest');
+		foo.innerHTML = await codeToHtml(code, {
+			lang: 'py',
+			theme: 'rose-pine'
+		});
+	</script>
+
+	<p>
+		Obviously
+	</p>
+	
+
 	<hr class="squiggly-line">
 	<h2>Transformers</h2>
 
+	<p>
+		While the transformer architecture was originally intended for NLP applications, it is nowadays seen more as a general compute engine to which we can attach our own encoders and decoders. There are endless variations on this "general compute engine" with different attention implementations and changes to the <code>Q, K, V</code> projections. We will treat the inner transformer block as a black box to some degree and focus on mapping to and from it.
+	</p>
+
   	<p>
-		Transformer blocks as we commonly know them are a self-map acting on a collection of <code>context_len</code> vectors of dimension <code>d_model</code>. As all neural networks, they work on batches so really it is tensors of shape <code>(batch_size, max_tokens, d_model)</code> which are mapped to new tensors of the same shape. Our goal will be to encode our times series of shape <code>(batch_size, context_len)</code> into a tensor of this form, allow a series of transformer blocks to act on it, and then decode the result into a 
+		Transformer blocks as we commonly know them are a self-map acting on a collection of <code>context_len</code> vectors of dimension <code>d_model</code>. As all neural networks, they work on batches so really it is tensors of shape <code>(batch_size, max_tokens, d_model)</code> which are mapped to new tensors of the same shape. Our goal will be to encode our times series of shape <code>(batch_size, context_len)</code> into a tensor of this form, allow a series of transformer blocks to act on it, and then decode the result into a tensor of shape <code>(batch_size, output_len)</code>.
 	</p>
 
 	<p>
-		In NLP applications, words are split into tokens (<code>"ligma" -> ["lig", "ma"]</code>), each token is one-hot encoded and there is a learned embedding matrix which maps each token to a vector of dimension <code>d_model</code>. We could do the same for time series data by binning to map e.g. the interval \((0.1, 0.2)\) to a one-hot vector and then embedd that. Obviously, this approach ignores the inherent continuity of time series data, both in input and output. For image applications, the vision transformer (ViT) pioneered the idea of "patching" where the image is split into non-overlapping patches, each of which is mapped to a <code>d_model</code> vector through some <a target="_blank" href="https://en.wikipedia.org/wiki/Multilayer_perceptron">MLP</a>-like procedure. This is the approach we will use to encode our time series.
+		In NLP applications, words are split into tokens (<code>"ligma" -> ["lig", "ma"]</code>), each token is one-hot encoded and there is a learned embedding matrix which maps each token to a vector of dimension <code>d_model</code>. We could do the same for time series data by binning to map e.g. the interval \((0.1, 0.2)\) to a one-hot vector and then embedd that. Obviously, this approach ignores the inherent continuity of time series data, both in input and output. For image applications, the vision transformer (ViT) pioneered the idea of "patching" where the image is split into non-overlapping patches, each of which is mapped to a <code>d_model</code> vector through some <a target="_blank" href="https://en.wikipedia.org/wiki/Multilayer_perceptron">MLP</a>-like procedure. This is the approach we will use to encode our time series. Specifically, we will split our time series into <code>patches</code> patches, each of length <code>patch_len</code> so that <code>patches * patch_len = context_len.</code> In the TimesFM paper, this is done using a residual block.
 	</p>
+	<div class="code_block" id="code_res_block"></div>
 
-	</section>
-
-		<script type="module">
-	    import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
+	<script type="module">
+		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
 		const code = `
-class WeatherDataset(Dataset):
-    def __init__(self, ):
-        self.frame = pd.read_csv("data/data.csv")
+class ResidualBlock(nn.Module):
+    def __init__(self,
+                 input_dim,
+                 output_dim,
+                 hidden_dim,
+                 dropout = 0.1,
+                 apply_ln = True):
+        super().__init__()
 
-    def __len__(self):
-        return len(self.frame)
-
-    def __getitem__(self, idx):
-        data = self.frame.iloc[idx, 3]
-            
-        return torch.tensor(data, dtype=torch.float32)
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.residual = nn.Linear(input_dim, output_dim)
+        self.gelu = nn.GELU(approximate='tanh')
+        self.dropout = nn.Dropout(dropout)
+        
+        self.apply_ln = apply_ln
+        self.layer_norm = nn.LayerNorm(output_dim)
+        
+    def forward(self, x):
+        residual = self.residual(x)
+        
+        x = self.fc1(x)
+        x = self.gelu(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        
+        x = x + residual
+        if self.apply_ln:    
+            x = self.layer_norm(x)
+        
+        return x
     `;
 
-		const foo = document.getElementById('code_weather_dataset');
+		const foo = document.getElementById('code_res_block');
+		foo.innerHTML = await codeToHtml(code, {
+			lang: 'py',
+			theme: 'rose-pine'
+		});
+	</script>
+
+	<p>
+		Now we can use the encoder to go from a <code>(batch_size, context_len)</code> to a <code>(batch_size, patches, patch_len)</code> tensor.
+	</p>
+
+	<div class="code_block" id="code_encoder"></div>
+
+	<script type="module">
+		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
+		const code = `
+def encode_patches(self, x, patches, patch_len, encoder):
+    x = x.view(x.shape[0], patches, patch_len)
+    encoded_patches = []
+
+    for i in range(patches):
+        patch_data = x[:, i, :, :].flatten(start_dim=1)
+        encoded_patch = encoder(patch_data)
+        encoded_patches.append(encoded_patch)
+
+    return encoded_patches
+	`;
+
+		const foo = document.getElementById('code_encoder');
 		foo.innerHTML = await codeToHtml(code, {
 			lang: 'py',
 			theme: 'rose-pine'
@@ -380,142 +516,15 @@ class WeatherDataset(Dataset):
 	</script>
 
 
+	</section>
+
+
+
+
 	<div class="centering">
 		<hr class="squiggly-line">
 	</div>
 		
-	<section class="papers centering">
-		<h1>Papers</h1>
-
-		<div class="masonry-grid">
-			<div class="column">
-
-				<div class="paper" id="accspec">
-					<div class="formula">\(\boldsymbol{\rho_\Omega - \chi_\Omega}\)</div>
-					<div class="title">On accumulated spectrograms for Gabor frames</div>
-					<div class="subtitle">May 2024</div>
-					<a href="https://arxiv.org/abs/2405.02059" target="_blank">ArXiV</a>
-				</div>
-
-				<div class="paper" id="measureoperatorconv">
-					<div class="formula">\(\boldsymbol{\mu \star S}\)</div>
-					<div class="title">Measure-operator convolutions and applications to mixed-state Gabor multipliers</div>
-					<div class="subtitle">July 2024<br>with Hans Feichtinger and Franz Luef</div>
-					<a href="https://link.springer.com/article/10.1007/s43670-024-00090-0" target="_blank">Sampling Theory, Signal Processing, and Data Analysis</a>
-					<a href="https://arxiv.org/abs/2308.04985" target="_blank">ArXiV</a>
-				</div>
-
-				<div class="paper" id="qhalc">
-					<div class="formula">\(\boldsymbol{f \star_G S}\)</div>
-					<div class="title">Quantum harmonic analysis on locally compact groups</div>
-					<div class="subtitle">October 2022</div>
-					<a href="https://www.sciencedirect.com/science/article/pii/S0022123623002537" target="_blank">Journal of Functional Analysis</a>
-					<a href="https://arxiv.org/abs/2210.08314" target="_blank">ArXiV</a>
-				</div>
-
-			
-			</div>
-			<div class="column">
-				
-				<div class="paper" id="blurop">
-					<div class="formula">\(\boldsymbol{B_\mu^\varphi}\)</div>
-					<div class="title">On a time-frequency blurring operator with applications in data augmentation</div>
-					<div class="subtitle">May 2024</div>
-					<a href="https://arxiv.org/abs/2405.12899" target="_blank">ArXiV</a>
-					<a href="https://github.com/SimonHalvdansson/Time-Frequency-Blurring-Operator" target="_blank">GitHub</a>
-				</div>
-				
-				<div class="paper" id="symbolrecovery">
-					<div class="formula">\(\boldsymbol{A_f^g \mapsto f}\)</div>
-					<div class="title">Five ways to recover the symbol of a non-binary localization operator</div>
-					<div class="subtitle">January 2023</div>
-					<a href="https://arxiv.org/abs/2301.11618" target="_blank">ArXiV</a>
-					<a href="https://github.com/SimonHalvdansson/Localization-Operator-Symbol-Recovery" target="_blank">GitHub</a>
-				</div>
-				
-				<div class="paper" id="minimizers">
-					<div class="formula">\(\boldsymbol{\operatorname{argmin}_f \mathcal{L}_{\mathrm{P}}(f)}\)</div>
-					<div class="title">Existence of Uncertainty Minimizers for the Continuous Wavelet Transform</div>
-					<div class="subtitle">August 2021<br>with Jan-Fredrik Olsen, Ron Levie and Nir Sochen</div>
-					<a href="https://onlinelibrary.wiley.com/doi/full/10.1002/mana.202100466">Mathematische Nachrichten</a>
-					<a href="https://arxiv.org/abs/2108.12018" target="_blank">ArXiV</a>
-				</div>
-
-			</div>
-		</div>
-	</section>
-	
-	<div class="centering">
-		<hr class="squiggly-line">
-	</div>
-
-	<section id="talks" class="centering">
-		<h1>Talks/posters</h1>
-
-		<div class="timeline">
-			
-			<div class="talk">
-				<div class="name">Workshop on Quantum Harmonic Analysis (<a href="https://www.analysis.uni-hannover.de/de/institut/personenverzeichnis/robert-fulsche/qha" target="_blank">QHA2024</a>)</div>
-				<div class="date_loc">August 5-9, 2024 · Hannover, Germany</div>
-				<div class="link"><a href="slides/QHA24_Presentation.pdf" target="_blank">Slides</a></div>
-			</div>
-
-			<div class="talk">
-				<div class="name">More on Harmonic Analysis (<a href="https://ps-mathematik.univie.ac.at/e/?event=strobl24" target="_blank">Strobl24</a>) </div>
-				<div class="date_loc">June 9-15, 2024 · Strobl, Austria</div>
-				<div class="link"><a href="slides/Strobl_poster_2024.pdf" target="_blank">Poster</a></div>
-			</div>
-
-			<div class="talk">
-				<div class="name">International Workshop on Operator Theory and its Applications (<a href="https://www.helsinki.fi/en/conferences/iwota2023" target="_blank">IWOTA 2023</a>)</div>
-				<div class="date_loc">July 31 - August 4, 2023 · Helsinki, Finland</div>
-				<div class="link"><a href="slides/IWOTA_2023_Talk.pdf" target="_blank">Slides</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">Workshop on Quantum Harmonic Analysis (<a href="https://web.archive.org/web/20230922014919/https://www.ntnu.edu/imf/qha2023" target="_blank">QHA2023</a>)</div>
-				<div class="date_loc">June 5-9, 2023 · NTNU Trondheim, Norway</div>
-				<div class="link"><a href="slides/QHA23_Presentation.pdf" target="_blank">Slides</a></div>
-			</div>
-			
-			<div class="talk">
-				<div class="name">Dynamics in the noncommutative world (<a href="https://sites.google.com/view/dncw2023" target="_blank">DNCW 2023</a>)</div>
-				<div class="date_loc">January 26, 2023 · NTNU Trondheim, Norway</div>
-				<div class="link"><a href="slides/DNCW_Presentation_2023.pdf" target="_blank">Slides</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">Oberseminar Analysis</div>
-				<div class="date_loc">October 4, 2022 · Leibniz Universität Hannover, Germany</div>
-				<div class="link"><a href="slides/Hannover_Presentation_2022.pdf" target="_blank">Slides</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">International Conference on Computational Harmonic Analysis (<a href="https://ps-mathematik.univie.ac.at/e/index.php?event=ICCHA2022" target="_blank">ICCHA 2022</a>)</div>
-				<div class="date_loc">September 12-16, 2022 · Ingolstadt, Germany</div>
-				<div class="link"><a href="slides/ICCHA_Presentation_2022.pdf" target="_blank">Slides</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">International Workshop on Operator Theory and its Applications (<a href="https://iwota2022.urk.edu.pl/" target="_blank">IWOTA 2022</a>)</div>
-				<div class="date_loc">September 6-10, 2022 · Krakow, Poland</div>
-				<div class="link"><a href="slides/IWOTA_Presentation_2022.pdf" target="_blank">Slides</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">Applied Harmonic Analysis and Friends (<a href="https://ps-mathematik.univie.ac.at/e/?event=strobl22" target="_blank">Strobl22</a>)</div>
-				<div class="date_loc">June 19-25, 2022 · Strobl, Austria</div>
-				<div class="link"><a href="slides/Strobl22_poster.pdf" target="_blank">Poster</a></div>
-			</div>
-	
-			<div class="talk">
-				<div class="name">Online International Conference on Computational Harmonic Analysis (<a href="https://ps-mathematik.univie.ac.at/e/index.php?event=ICCHA2021online" target="_blank">ICCHA 2021</a>)</div>
-				<div class="date_loc">September 13-17, 2021 · Online</div>
-				<div class="link"><a href="slides/ICCHA2021_slides.pdf" target="_blank">Slides</a></div>
-			</div>
-		</div>
-
-	</section>
 
 </body>
 </html>

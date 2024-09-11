@@ -97,7 +97,12 @@ class MLPForecast(nn.Module):
 """
 
 class ResidualBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_dim, dropout = 0.1, apply_ln = True):
+    def __init__(self,
+                 input_dim,
+                 output_dim,
+                 hidden_dim,
+                 dropout = 0.1,
+                 apply_ln = True):
         super().__init__()
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
@@ -108,7 +113,6 @@ class ResidualBlock(nn.Module):
         
         self.apply_ln = apply_ln
         self.layer_norm = nn.LayerNorm(output_dim)
-        
         
     def forward(self, x):
         residual = self.residual(x)
