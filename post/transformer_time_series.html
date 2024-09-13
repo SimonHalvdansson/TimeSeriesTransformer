@@ -18,27 +18,40 @@
 
 	<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+	<link rel="stylesheet" href="atom-one-dark.min.css">
+	<script src="highlight.min.js"></script>
+
+	<script>hljs.highlightAll();</script>
+
 </head>
 <body>
 
 	<section class="blog centering">
 		<h1>An implementation of transformer-based time-series forecasting, inspired by TimesFM</h1>
-		<div class="subtitle monospace"> • By Simon Halvdansson&nbsp;|&nbsp;Sep. 2024&nbsp;|&nbsp;Reading time ~6 mins.</div>
+		<div class="subtitle monospace"> • By Simon Halvdansson&nbsp;|&nbsp;Sep. 2024</div>
 
-		<hr class="squiggly-line">
+		<hr class="squiggly-line"/>
 		<p>
-			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. As a technical reading experience, it is meant to fall somewhere between reading the original paper <a target="_blank" href="https://arxiv.org/abs/2310.10688">"A decoder-only foundation model for time-series forecasting"</a> and trying to read the <a target="_blank" href="https://github.com/google-research/timesfm">source code</a>. Specifically, we will build out a simpler version of the TimesFM model step-by-step, starting from setting up the dataloader. Note that this is not meant as a general introduction to either PyTorch nor time-series forecasting and what is included is mostly a reflection of what I myself found most interesting.
+			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. TimesFM is a foundation model for time series prediction which has been trained on a large corpus of data and can, but doesn't have to, be fine-tuned for specific applications. On a high level, the TimesFM model is rather vanilla and consists of an encoder which converts the input time series to a sequence of tokens, a standard decoder-only transformer implementation and a decoder which maps to the prediction vector.
 		</p>
 
 		<p>
-			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that we have some wiggle room in exactly how we decode the data. We will explore this a bit in the end.
+			Over the last 5 years, the field of time-series prediction has gone through something of a revolution with machine learning methods generally dominating the various leaderboards instead of statistical or hybrid models. Apart from TimesFM, foundation models such as <a target="_blank" href="https://github.com/amazon-science/chronos-forecasting">Chronos</a> by Amazon, <a target="_blank" href="https://github.com/Nixtla/nixtla">TimeGPT</a> by Nixtla and <a target="_blank" href="https://github.com/yuqinie98/PatchTST">PatchTST</a> by IBM all use transformer backbones and achieve excellent results. There are also prominent non-foundation and non-transformer based methods such as <a target="_blank" href="https://github.com/ServiceNow/N-BEATS">N-BEATS</a> and <a target="_blank" href="fnjd">Autoformer</a> with comparable results.
 		</p>
 
 		<p>
-			As any in-vogue method, transformers for time-series are not without a counter-movement (rightly) questioning the effectiveness and strength of baselines used. Discussing this is decidedly a non-goal of this post and we try to stick to implementation details. Nonetheless, the context provided by an evaluation setup is valuable to properly define the problem we are trying to solve. For this reason, we begin by implementing a very simple model for time series forecasting based on an MLP block which will act as our baseline.
+			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that large parts of the model can be reused for other purposes. Consider e.g. an encoding procedure which takes in a time-frequency representation of historical data and a decoder which reads multiple tokens and maps them into a dictionary - this is the core of the <a target="_blank" href="https://github.com/openai/whisper">Whisper</a> automatic speech recognition (ASR) model from OpenAI. The model can also be made multivariate by increasing the input dimension of the encoder and output dimension of the decoder. We will discuss these sort of generalizations briefly in the end.
 		</p>
 
-		<hr class="squiggly-line">
+		<p>
+			As any in-vogue method, transformers for time-series are not without a counter-movement (rightly) questioning the effectiveness and strength of baselines used. Discussing this is decidedly a non-goal of this post and we try to stick to implementation details. Nonetheless, the context provided by an evaluation setup is valuable to properly define the problem we are trying to solve. For this reason, we begin by implementing a very simple model for time series forecasting based on a multilayer perceptron (MLP) block which will act as our baseline.
+		</p>
+
+		<p>
+
+		</p>
+
+		<hr class="squiggly-line"/>
 		<h2>Dataset</h2>
 
 		<p>
@@ -140,29 +153,18 @@
 		From it we see that we have readings for a few weather parameters with a one hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a PyTorch <code>Dataset</code> for this as follows. 
 	</p>
 
-	<div class="code_block" id="code_weather_dataset"></div>
-
-	<script type="module">
-	    import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 class WeatherDataset(Dataset):
-    def __init__(self):
-        self.frame = pd.read_csv('data.csv')
+	def __init__(self):
+		self.frame = pd.read_csv('data.csv')
 
     def __len__(self):
-        return len(self.frame)
+		return len(self.frame)
 
-    def __getitem__(self, idx):
-        data = self.frame.iloc[idx, 3]
-        return torch.tensor(data, dtype=torch.float32)
-    `;
-
-		const foo = document.getElementById('code_weather_dataset');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	def __getitem__(self, idx):
+		data = self.frame.iloc[idx, 3]
+		return torch.tensor(data, dtype=torch.float32)
+	</code></pre>
 
 	<p>
 		With the weather dataset abstracted away, we can write another dataset for the actual prediction task. It should be able to do a few key things:
@@ -172,279 +174,230 @@ class WeatherDataset(Dataset):
 			<li>Get a <code>series</code> tensor of length <code>context_len</code> which should be the input to the model, and a <code>target</code> tensor of length <code>output_len</code> which is the desired output which we will use for the loss function.</li> 
 		</ul>
 		<p>
-		We choose for the test set to start after 80% of the data points and a buffer zone of twice the <code>context_len</code>.
+		We choose for the test set to start after 80% of the data points and a buffer of twice the <code>context_len</code> to prevent data leakage.
 	</p>
-	<div class="code_block" id="code_timeseries_dataset"></div>
 
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 class TimeSeriesDataset(Dataset):
-    def __init__(self, points_ds, context_len, output_len, split='train'):
-        full_length = len(points_ds)
-        test_start = floor(full_length * 0.8)
-        train_stop = test_start - context_len * 2
-        
-        if split == 'train':
-            train_len = train_stop
-            self.points = [points_ds[i] for i in range(train_len)]
-        else:
-            self.points = [points_ds[i] for i in range(test_start, full_length)]
-        
-        self.points = torch.stack(self.points)
-        
-        self.context_len = context_len
-        self.output_len = output_len
-        
-    def __len__(self):
-        return len(self.points) - self.context_len - self.output_len
-    
-    def __getitem__(self, idx):
-        series = self.points[idx : idx + self.context_len]
-        target = self.points[idx + self.context_len :
-                             idx + self.context_len + self.output_len]
-                        
-        return series, target
-    `;
-
-		const foo = document.getElementById('code_timeseries_dataset');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	def __init__(self, points_ds, context_len, output_len, split='train'):
+		full_length = len(points_ds)
+		test_start = floor(full_length * 0.8)
+		train_stop = test_start - context_len * 2
+		
+		if split == 'train':
+			train_len = train_stop
+			self.points = [points_ds[i] for i in range(train_len)]
+		else:
+			self.points = [points_ds[i] for i in range(test_start, full_length)]
+		
+		self.points = torch.stack(self.points)
+		
+		self.context_len = context_len
+		self.output_len = output_len
+		
+	def __len__(self):
+		return len(self.points) - self.context_len - self.output_len
+	
+	def __getitem__(self, idx):
+		series = self.points[idx : idx + self.context_len]
+		target = self.points[idx + self.context_len :
+								idx + self.context_len + self.output_len]
+						
+		return series, target
+	</code></pre>
 
 	<p>
 		Below is an example with <code>context_len = 2048</code> and <code>output_len = 128</code>.
 	</p>
 
-	<img class="figure" src="dataset_example.png"></img>
+	<div class="figure_container">
+		<img class="figure" src="weather_dataset_example.png"></img>
+	</div>
 
 	<p>
-		The <code>1024 + 128 = 1152</code> datapoints correspond to 48 days so the high frequency details are the day/night cycle and the lower frequency energy is likely small scale weather trends. We will return to this example later with predictions for comparison.
+		The <code>2048 + 128 = 2176</code> datapoints correspond to 90 days so the high frequency details are the day/night cycle and the lower frequency energy is likely small scale weather trends. Note in particular the flatter segments and the highly irregular nature of the signal which makes it hard for a human to make good guesses other than the regular day/night cycle. We will return to this example later with predictions for comparison.
 	</p>
 
-	<hr class="squiggly-line">
+	<hr class="squiggly-line"/>
 	<h2>MLP baseline and model generalities</h2>
 
 	<p>
 		Now we turn to developing the simple multilayer-perceptron model for the baseline. Our input data, the temperatures from the table, is not dimensionless and can significantly drift over time. For this reason it is beneficial to normalize each slice we let the model act on and then invert the normalization after the model has acted. To this end, we set up the following helper functions which takes an input <code>x</code>of shape <code>(batch_size, len)</code>:
 	</p>
 
-	<div class="code_block" id="code_normalization"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 def normalize(x, m = None, s = None):    
-    if m is None or s is None:
-        m = x.mean(dim=1)
-        s = x.std(dim=1)
-        
-    return (x - m) / s, m, s
+	if m is None or s is None:
+		m = x.mean(dim=1)
+		s = x.std(dim=1)
+		
+	return (x - m) / s, m, s
 
 def un_normalize(x, m, s):        
-    return (x * s) + m
-    `;
-
-		const foo = document.getElementById('code_normalization');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	return (x * s) + m
+	</code></pre>
 
 	<p>
 		The reason we allow the mean and standard deviations to be given as arguments is that we want future data to be normalized using the statistics from the context window. We use this in our loss function which - on account of this normalization - is scale invariant. As a basis we use the standard Mean Squared Error (MSE) \(\ell^2\)-loss function.
 	</p>
 
-	<div class="code_block" id="code_loss"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 def normalized_mse(series, pred, target):
-    _, m, s = normalize(series)
-        
-    pred, _, _ = normalize(pred, m, s)
-    target, _, _ = normalize(target, m, s)
-        
-    return nn.MSELoss()(pred, target)
-    `;
-
-		const foo = document.getElementById('code_loss');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	_, m, s = normalize(series)
+		
+	pred, _, _ = normalize(pred, m, s)
+	target, _, _ = normalize(target, m, s)
+		
+	return nn.MSELoss()(pred, target)
+	</code></pre>
 
 	<p>
 		We can now set up the baseline model with a single hidden layer and a simple <code>ReLU</code> nonlinearity:
 	</p>
 
-	<div class="code_block" id="code_MLP"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 class MLPForecast(nn.Module):
-    def __init__(self, context_len, output_len):
-        super().__init__()
-                    
-        hidden_dim = output_len * 4
-        
-        self.fc1 = nn.Linear(context_len, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_len)
-        self.relu = nn.ReLU()
-        
-    def forward(self, x):
-        x, m, s = normalize(x)
-        
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-                
-        x = un_normalize(x, m, s)
-        
-        return x
-    `;
-
-		const foo = document.getElementById('code_MLP');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	def __init__(self, context_len, output_len):
+		super().__init__()
+					
+		hidden_dim = output_len * 4
+		
+		self.fc1 = nn.Linear(context_len, hidden_dim)
+		self.fc2 = nn.Linear(hidden_dim, output_len)
+		self.relu = nn.ReLU()
+		
+	def forward(self, x):
+		x, m, s = normalize(x)
+		
+		x = self.fc1(x)
+		x = self.relu(x)
+		x = self.fc2(x)
+				
+		x = un_normalize(x, m, s)
+		
+		return x
+	</code></pre>
 
 	<p>
 		This is basically all that is needed for this simple model. Below is the training code which is standard with dynamic <code>device</code> selection and the <code>schedulefree.AdamWScheduleFree</code> optimizer from <a target="_blank" href="https://github.com/facebookresearch/schedule_free">Meta</a>.
 	</p>
 
-	<div class="code_block" id="code_MLP_train"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 if __name__ == '__main__':
-    output_len = 128
-    context_len = 1024
-    
-    learning_rate = 3e-4
-    batch_size = 16
-    max_epochs = 1
+	output_len = 128
+	context_len = 1024
+	
+	learning_rate = 3e-4
+	batch_size = 16
+	max_epochs = 1
 
-    device = 'cpu'
+	device = 'cpu'
 
-    if torch.cuda.is_available():
-        device = 'cuda'
-    elif torch.backends.mps.is_available():
-        device = 'mps'
-    
-    weather_ds = WeatherDataset()
+	if torch.cuda.is_available():
+		device = 'cuda'
+	elif torch.backends.mps.is_available():
+		device = 'mps'
+	
+	weather_ds = WeatherDataset()
+	
+	ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'train')
+	ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'test')
 
-    ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'train')
-    ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'test')
+	dl_train = DataLoader(ds_train, batch_size = batch_size, shuffle = True)
+	dl_test = DataLoader(ds_test, batch_size = batch_size, shuffle = True)
+	
+	model = MLPForecast(context_len, output_len)
+	
+	optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
+	model = model.to(device)
+	
+	losses = []
+	
+	for epoch in range(max_epochs):
+		print("--------Epoch {}--------".format(epoch + 1))
+		train(model, device, optimizer, dl_train)
+		test(model, device, optimizer, dl_test)
 
-    dl_train = DataLoader(ds_train, batch_size = batch_size, shuffle = True)
-    dl_test = DataLoader(ds_test, batch_size = batch_size, shuffle = True)
-    
-    model = MLPForecast(context_len, output_len)
-    
-    optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
-    model = model.to(device)
-    
-    losses = []
-    
-    for epoch in range(max_epochs):
-        print("--------Epoch {}--------".format(epoch + 1))
-        train(model, device, optimizer, dl_train)
-        test(model, device, optimizer, dl_test)
-
-    print("Training completed")
-    `;
-
-		const foo = document.getElementById('code_MLP_train');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	print("Training completed")
+	</code></pre>
 
 	<p>
 		The <code>train()</code> and <code>test()</code> functions with some <code>tqdm</code> and plotting niceties are defined as follows:
 	</p>
 
-	<div class="code_block" id="code_MLP_traintest"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 def train(model, device, optimizer, dataloader):
-    model.train()
-    optimizer.train()
-    
-    progress_bar = tqdm(dataloader, desc="Training", leave=True)
-    cum_loss = 0
+	model.train()
+	optimizer.train()
+	
+	progress_bar = tqdm(dataloader, desc="Training", leave=True)
+	cum_loss = 0
 
-    for step, (series, target) in enumerate(progress_bar):
-        optimizer.zero_grad()
-        
-        series = series.to(device)
-        target = target.to(device)
-                   
-        pred = model(series).squeeze()
-        
-        loss = normalized_mse(series, pred, target)
-        losses.append(loss.item())
+	for step, (series, target) in enumerate(progress_bar):
+		optimizer.zero_grad()
+		
+		series = series.to(device)
+		target = target.to(device)
+					
+		pred = model(series).squeeze()
+		
+		loss = normalized_mse(series, pred, target)
+		losses.append(loss.item())
 
-        loss.backward()
-        optimizer.step()
-            
-        cum_loss += loss.item()
-        progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
-    
+		loss.backward()
+		optimizer.step()
+			
+		cum_loss += loss.item()
+		progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
+		
 def test(model, device, optimizer, dataloader):
-    model.eval()
-    optimizer.eval()
-    
-    progress_bar = tqdm(dataloader, desc="Validating", leave=True)
-    
-    cum_loss = 0
-    
-    with torch.no_grad():
-        for step, (series, target) in enumerate(progress_bar):           
-            series = series.to(device)
-            target = target.to(device)
-            
-            pred = model(series).squeeze()
-            loss = normalized_mse(series, pred, target)
-            
-            cum_loss += loss.item()
-            progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
-                    
-    print("Validation MSE: {}".format(cum_loss/len(dataloader)))
-    `;
-
-		const foo = document.getElementById('code_MLP_traintest');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	model.eval()
+	optimizer.eval()
+	
+	progress_bar = tqdm(dataloader, desc="Validating", leave=True)
+	
+	cum_loss = 0
+	
+	with torch.no_grad():
+		for step, (series, target) in enumerate(progress_bar):           
+			series = series.to(device)
+			target = target.to(device)
+			
+			pred = model(series).squeeze()
+			loss = normalized_mse(series, pred, target)
+			
+			cum_loss += loss.item()
+			progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
+					
+	print("Validation MSE: {}".format(cum_loss/len(dataloader)))
+	</code></pre>
 
 	<p>
-		This model has <code>590&thinsp;464</code> parameters and trains to a test <code>MSE = 0.909</code> in <code>7s</code> on an RTX 3070. 
+		This model has <code>1,114,752</code> parameters and trains to a test <code>MSE = 0.729</code> in <code>7s</code> on an RTX 3070. We try it out on some examples from the test set below.
 	</p>
 
-	<img class="figure" src="mlp_prediction.png"></img>
-	
+	<div class="figure_container">
+		<img class="figure" src="mlp_prediction_example_1.png"></img>
+		<img class="figure" src="mlp_prediction_example_2.png"></img>
+		<img class="figure" src="mlp_prediction_example_3.png"></img>
+	</div>
+	<p>
+		Should we wish for longer forecasts we essentially have 2 options; increase <code>output_len</code> or run the model autoregressively. The first of these options increases the models parameters while the second comes at the cost of inference time.
+	</p>
 
-	<hr class="squiggly-line">
+	<div class="figure_container">
+		<img class="figure" src="5_step_mlp_forecast.png"></img>
+	</div>
+
+	<p>
+		TODO: Continue here
+	</p>
+
+	<hr class="squiggly-line"/>
 	<h2>Transformers</h2>
 
 	<p>
-		While the transformer architecture was originally intended for NLP applications, it is nowadays seen more as a general compute engine to which we can attach our own encoders and decoders. There are endless variations on this "general compute engine" with different attention implementations and changes to the <code>Q, K, V</code> projections. We will treat the inner transformer block as a black box to some degree and focus on mapping to and from it.
+		While the transformer architecture was originally intended for NLP applications, it is nowadays seen more as a general compute engine to which we can attach our own encoders and decoders. There are endless variations on this "general compute engine" with different attention implementations, extra steps applied to <code>Q, K, V</code> projections and data moved in between transformer blocks. We will treat the inner transformer block as a black box to some degree and focus on mapping to and from it.
 	</p>
 
   	<p>
@@ -452,89 +405,220 @@ def test(model, device, optimizer, dataloader):
 	</p>
 
 	<p>
-		In NLP applications, words are split into tokens (<code>"ligma" -> ["lig", "ma"]</code>), each token is one-hot encoded and there is a learned embedding matrix which maps each token to a vector of dimension <code>d_model</code>. We could do the same for time series data by binning to map e.g. the interval \((0.1, 0.2)\) to a one-hot vector and then embedd that. Obviously, this approach ignores the inherent continuity of time series data, both in input and output. For image applications, the vision transformer (ViT) pioneered the idea of "patching" where the image is split into non-overlapping patches, each of which is mapped to a <code>d_model</code> vector through some <a target="_blank" href="https://en.wikipedia.org/wiki/Multilayer_perceptron">MLP</a>-like procedure. This is the approach we will use to encode our time series. Specifically, we will split our time series into <code>patches</code> patches, each of length <code>patch_len</code> so that <code>patches * patch_len = context_len.</code> In the TimesFM paper, this is done using a residual block.
+		In NLP applications, words are split into tokens (<code>"ligma" -> ["lig", "ma"]</code>), each token is one-hot encoded and there is a learned embedding matrix which maps each token to a vector of dimension <code>d_model</code>. We could do the same for time series data by binning to map e.g. the interval \((0.1, 0.2)\) to a one-hot vector and then embedd that. Obviously, this approach ignores the inherent continuity of time series data, both in input and output and also results in the same number of tokens as input data points which can become prohibitively expensive due to the quadratic time complexity of self-attention. For image applications, the vision transformer (ViT) pioneered the idea of "patching" where the image is split into non-overlapping patches, each of which is mapped to a <code>d_model</code> vector through some <a target="_blank" href="https://en.wikipedia.org/wiki/Multilayer_perceptron">MLP</a>-like procedure. This is the approach we will use to encode our time series. Specifically, we will split our time series into <code>patches</code> patches, each of length <code>patch_len</code> so that <code>patches * patch_len = context_len.</code> In the TimesFM paper, this is done using a residual block.
 	</p>
-	<div class="code_block" id="code_res_block"></div>
 
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 class ResidualBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_dim, dropout = 0.1, apply_ln = True):
-        super().__init__()
+	def __init__(self, input_dim, output_dim, hidden_dim, dropout = 0.1, apply_ln = True):
+		super().__init__()
 
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
-        self.residual = nn.Linear(input_dim, output_dim)
-        self.gelu = nn.GELU(approximate='tanh')
-        self.dropout = nn.Dropout(dropout)
-        
-        self.apply_ln = apply_ln
-        self.layer_norm = nn.LayerNorm(output_dim)
-        
-    def forward(self, x):
-        residual = self.residual(x)
-        
-        x = self.fc1(x)
-        x = self.gelu(x)
-        x = self.fc2(x)
-        x = self.dropout(x)
-        
-        x = x + residual
-        if self.apply_ln:    
-            x = self.layer_norm(x)
-        
-        return x
-    `;
-
-		const foo = document.getElementById('code_res_block');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+		self.fc1 = nn.Linear(input_dim, hidden_dim)
+		self.fc2 = nn.Linear(hidden_dim, output_dim)
+		self.residual = nn.Linear(input_dim, output_dim)
+		self.gelu = nn.GELU(approximate='tanh')
+		self.dropout = nn.Dropout(dropout)
+		
+		self.apply_ln = apply_ln
+		self.layer_norm = nn.LayerNorm(output_dim)
+		
+	def forward(self, x):
+		residual = self.residual(x)
+		
+		x = self.fc1(x)
+		x = self.gelu(x)
+		x = self.fc2(x)
+		x = self.dropout(x)
+		
+		x = x + residual
+		if self.apply_ln:    
+			x = self.layer_norm(x)
+		
+		return x
+	</code></pre>
 
 	<p>
 		Now we can use the encoder to go from a <code>(batch_size, context_len)</code> to a <code>(batch_size, patches, patch_len)</code> tensor by splitting up the input into vectors of length <code>patch_len</code> which are mapped to vectors of length <code>d_model</code>.
 	</p>
 
-	<div class="code_block" id="code_encoder"></div>
-
-	<script type="module">
-		import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
-		const code = `
+	<pre><code class="language-py">
 def encode_patches(self, x, patches, patch_len, encoder):
-    x = x.view(x.shape[0], patches, patch_len)
-    encoded_patches = []
+	x = x.view(x.shape[0], patches, patch_len)
+	encoded_patches = []
 
-    for i in range(patches):
-        patch_data = x[:, i, :, :].flatten(start_dim=1)
-        encoded_patch = encoder(patch_data)
-        encoded_patches.append(encoded_patch)
+	for i in range(patches):
+		patch_data = x[:, i, :].flatten(start_dim=1)
+		encoded_patch = encoder(patch_data)
+		encoded_patches.append(encoded_patch)
 
-    return encoded_patches
-	`;
-
-		const foo = document.getElementById('code_encoder');
-		foo.innerHTML = await codeToHtml(code, {
-			lang: 'py',
-			theme: 'rose-pine'
-		});
-	</script>
+	return encoded_patches
+	</code></pre>
 
 	<p>
-		By calling this function with <code>encoder</code> a <code>ResidualBlock</code>
+		By calling this function with <code>encoder</code> a <code>ResidualBlock</code> we move from a sequence of time series to a sequence of tokens amenable to transformer blocks. Before putting this representation through the transformer blocks, we need to add positional embeddings as the model otherwise is permutation invariant.
 	</p>
 
+	<pre><code class="language-py">
+def sinusoidal_positional_embedding(self, num_positions, d_model):
+	position = torch.arange(0, num_positions).unsqueeze(1)
+	div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+	
+	pos_embedding = torch.zeros(num_positions, d_model)
+	pos_embedding[:, 0::2] = torch.sin(position * div_term)
+	pos_embedding[:, 1::2] = torch.cos(position * div_term)
+	
+	pos_embedding = pos_embedding.unsqueeze(0)
+	
+	return pos_embedding
+	</code></pre>
+
+	<p>
+		For us, <code>num_positions</code> will be <code>patches = context_len // patch_len</code> unless we add some additional tokens. The output of this goes into a series of decoder transformer blocks and is then decoded using another <code>ResidualBlock</code> with no layer normalization or dropout. These components, and the positional embeddings, are set up as follows.
+	</p>
+	
+	<pre><code class="language-py">
+self.patch_decoder = ResidualBlock(input_dim = d_model,
+		output_dim = output_patch_len,
+		hidden_dim = d_model,
+		dropout = 0,
+		apply_ln = False)
+
+self.pos_embedding = self.sinusoidal_positional_embedding(self.patches, d_model).to(device)
+
+self.transformer_layers = nn.ModuleList([nn.TransformerDecoderLayer(d_model,
+		num_heads,
+		dim_feedforward=d_model * 4,
+		dropout=dropout,
+		batch_first=True)
+for _ in range(num_layers)
+	</code></pre>
+
+	<p>
+		With this we are essentially done! Below is the full code for the model where we explicitly force the model to a decoder-only mode using a upper triangular attention mask. 
+	</p>
+
+	<pre><code class="language-py">
+class TimeSeriesTransformer(nn.Module):
+	def __init__(self,
+					context_len,
+					patch_len,
+					output_patch_len,
+					d_model,
+					num_heads,
+					num_layers,
+					dropout):
+		super().__init__()
+		if context_len % patch_len != 0:
+			raise Exception("context_len needs to be a multiple of patch_len")
+			
+
+		self.d_model = d_model
+		self.output_patch_len = output_patch_len
+		
+		self.patch_len = patch_len
+		self.patches = context_len // patch_len
+		
+		self.patch_encoder = ResidualBlock(input_dim = patch_len,
+								output_dim = d_model,
+								hidden_dim = d_model,
+								dropout = dropout,
+								apply_ln = True)
+
+		self.patch_decoder = ResidualBlock(input_dim = d_model,
+								output_dim = output_patch_len,
+								hidden_dim = d_model,
+								dropout = 0,
+								apply_ln = False)
+		
+		self.pos_embedding = self.sinusoidal_positional_embedding(self.patches, d_model).to(device)
+		
+		self.transformer_layers = nn.ModuleList([
+			nn.TransformerDecoderLayer(d_model, num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
+			for _ in range(num_layers)
+		])
+		
+
+	def encode_patches(self, x, patches, patch_len, encoder):
+		x = x.view(x.shape[0], patches, patch_len)
+		encoded_patches = []
+		
+		for i in range(patches):
+			patch_data = x[:, i, :].flatten(start_dim=1)
+			encoded_patch = encoder(patch_data)
+			encoded_patches.append(encoded_patch)
+			
+		return encoded_patches
+
+	def forward(self, x):        
+		x, m, s = normalize(x)
+				
+		encoded_patches = self.encode_patches(x, self.patches, self.patch_len, self.patch_encoder)
+
+		x = torch.stack(encoded_patches, dim=1)
+								
+		x = x + self.pos_embedding
+				
+		for layer in self.transformer_layers:
+			tgt_mask = self.generate_square_subsequent_mask(x.size(1)).to(x.device)
+			x = layer(x, x, tgt_mask=tgt_mask, tgt_is_causal=True)
+		
+		x = x[:, -1, :]
+		x = self.patch_decoder(x)
+		x = x.view(x.shape[0], self.output_patch_len)
+		
+		x = un_normalize(x, m, s)
+		
+		return x
+	
+	def sinusoidal_positional_embedding(self, num_positions, d_model):
+		position = torch.arange(0, num_positions).unsqueeze(1)
+		div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+		
+		pos_embedding = torch.zeros(num_positions, d_model)
+		pos_embedding[:, 0::2] = torch.sin(position * div_term)
+		pos_embedding[:, 1::2] = torch.cos(position * div_term)
+		
+		pos_embedding = pos_embedding.unsqueeze(0)
+		
+		return pos_embedding
+	
+	def generate_square_subsequent_mask(self, sz):
+		mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
+		return mask
+	</code></pre>
+
+	<p>
+		With the hyperparameters <code>patch_len = 32, d_model = 256, num_heads = 4, num_layers = 2, dropout = 0.1</code>, this model has <code>2,322,176</code> parameters and trains to a test <code>MSE = 0.445</code> in <code>1m 20s</code> on an RTX 3070. This is considerably better than the MLP baseline and we see this also in the examples.
+	</p>
+
+	<div class="figure_container">
+		<img class="figure" src="transformer_prediction_example_1.png"></img>
+		<img class="figure" src="transformer_prediction_example_2.png"></img>
+		<img class="figure" src="transformer_prediction_example_3.png"></img>
+	</div>
+
+	<p>
+		For longer forecasts, we have an additional option compared to the MLP model available which is to decode multiple tokens.
+	</p>
+
+	<div class="figure_container">
+		<img class="figure" src="5_step_transformer_forecast.png"></img>
+	</div>
+	
+
+	<hr class="squiggly-line"/>
+	<h2>Alternative encoders</h2>
+
+
+	<hr class="squiggly-line"/>
+	<h2>Hyperparameters</h2>
 
 
 	</section>
 
 
-
-
 	<div class="centering">
-		<hr class="squiggly-line">
+		<hr class="squiggly-line"/>
 	</div>
 		
 

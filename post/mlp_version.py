@@ -108,7 +108,6 @@ class TimeSeriesTransformer(nn.Module):
     def __init__(self,
                  context_len,
                  patch_len,
-                 big_patch_len,
                  output_patch_len,
                  d_model,
                  num_heads,
@@ -118,42 +117,32 @@ class TimeSeriesTransformer(nn.Module):
         if context_len % patch_len != 0:
             raise Exception("context_len needs to be a multiple of patch_len")
             
-        if context_len % big_patch_len != 0:
-            raise Exception("context_len needs to be a multiple of patch_len*big_patch_multiple")
-            
+
         self.d_model = d_model
         self.output_patch_len = output_patch_len
         
         self.patch_len = patch_len
         self.patches = context_len // patch_len
-            
-        self.big_patch_len = big_patch_len
-        self.big_patches = context_len // big_patch_len
         
-        self.patch_encoder = ResidualBlock(input_dim = patch_len * channels,
+        self.patch_encoder = ResidualBlock(input_dim = patch_len,
                                 output_dim = d_model,
                                 hidden_dim = d_model,
                                 dropout = dropout,
                                 apply_ln = True)
-        self.big_patch_encoder = ResidualBlock(input_dim = big_patch_len * channels,
-                                               output_dim = d_model,
-                                               hidden_dim = d_model,
-                                               dropout = dropout,
-                                               apply_ln = False)
+
         self.patch_decoder = ResidualBlock(input_dim = d_model,
-                                output_dim = output_patch_len * channels,
+                                output_dim = output_patch_len,
                                 hidden_dim = d_model,
                                 dropout = 0,
                                 apply_ln = False)
         
-        self.pos_embedding = self.sinusoidal_positional_embedding(self.patches + self.big_patches + 1, d_model).to(device)
+        self.pos_embedding = self.sinusoidal_positional_embedding(self.patches, d_model).to(device)
         
         self.transformer_layers = nn.ModuleList([
             nn.TransformerDecoderLayer(d_model, num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
             for _ in range(num_layers)
         ])
         
-        self.start_token = nn.Parameter(torch.zeros(1, 1, d_model))
 
     def encode_patches(self, x, patches, patch_len, encoder):
         x = x.view(x.shape[0], patches, patch_len)
@@ -170,22 +159,18 @@ class TimeSeriesTransformer(nn.Module):
         x, m, s = normalize(x)
                 
         encoded_patches = self.encode_patches(x, self.patches, self.patch_len, self.patch_encoder)
-        encoded_big_patches = self.encode_patches(x, self.big_patches, self.big_patch_len, self.big_patch_encoder)
 
-        x = torch.stack(encoded_patches + encoded_big_patches, dim=1)
-                        
-        start = self.start_token.expand(x.size(0), -1, self.d_model)
-        x = torch.cat([start, x], dim=1)
-        
+        x = torch.stack(encoded_patches, dim=1)
+                                
         x = x + self.pos_embedding
                 
         for layer in self.transformer_layers:
             tgt_mask = self.generate_square_subsequent_mask(x.size(1)).to(x.device)
-            x = layer(x, x, tgt_mask=tgt_mask)
+            x = layer(x, x, tgt_mask=tgt_mask, tgt_is_causal=True)
         
         x = x[:, -1, :]
         x = self.patch_decoder(x)
-        x = x.view(x.shape[0], self.output_patch_len, self.channels)
+        x = x.view(x.shape[0], self.output_patch_len)
         
         x = un_normalize(x, m, s)
         
@@ -226,69 +211,54 @@ def normalized_mse(series, pred, target):
     return nn.MSELoss()(pred, target)
 
 
-def plot_dataset(ds, prediction=None):
-    plt.figure(figsize=(16, 5), dpi=200)
+def plot_dataset(ds, idx, title, prediction=None):
+    plt.figure(figsize=(16, 3), dpi=200)
     
-    x = np.arange(context_len + output_len)
-    last_val = np.array([ds[0][-1].numpy()])
-    future = np.concatenate((last_val, ds[1].numpy()))
+    x = np.arange(context_len + len(ds[idx][1]))
+    last_val = np.array([ds[idx][0][-1].numpy()])
     
-    plt.plot(x[:context_len], ds[0].numpy(), color='blue', label='Input')
+    future = np.concatenate((last_val, ds[idx][1].numpy()))
+    
+    plt.plot(x[:context_len], ds[idx][0].numpy(), color='blue', label='Input')
     plt.plot(x[context_len - 1:], future, color='orange', label='Target')
     
     if prediction is not None:
         prediction = np.concatenate((last_val, prediction.numpy()))
+        
         plt.plot(x[context_len - 1:], prediction, color='green', label='Prediction')
     
-    plt.xlabel("Reading", fontsize=12)
     plt.ylabel("Temperature (C)", fontsize=12)
-    if prediction is not None:
-        plt.title('MLP Prediction Example', fontsize=14)
-    else:
-        plt.title('Weather dataset example', fontsize=14)
+    plt.title(title, fontsize=14)
     
     plt.legend(fontsize=12)
     
     plt.tight_layout() 
     
-    if prediction is not None:
-        plt.savefig("mlp_prediction.png", format="png", dpi=200)
-    else:
-        plt.savefig("dataset_example.png", format="png", dpi=200)
-
+    plt.savefig(title.lower().replace(' ', '_') + '.png', format='png', dpi=200)
+    
     plt.show()
 
+
+def autoregressive_forecast(model, steps = 10, start_idx = 3000):
+    #new dataset with longer output_len
+    ds = TimeSeriesDataset(weather_ds, context_len, output_patch_len * steps, split = 'test')
     
-
-
-
-"""
-def forecast(data, model, steps=10):
-    data = data.to(device)
+    data = ds[start_idx][0].to(device)
     
     model.eval()
     with torch.no_grad():
         for step in range(steps):
             y = data[-context_len:].unsqueeze(0)
             
-            next_y = model(y)
+            next_y = model(y).squeeze()
             
             data = torch.cat((data, next_y))
             
-        data = data.detach().cpu().numpy()
+        data = data.detach().cpu().squeeze()[context_len:]
             
-        x = np.arange(len(data))    
-        
-        plt.figure(figsize=(16, 6))
-        
-        plt.plot(x[:context_len], data[:context_len], color='blue', label='Recorded')
-        plt.plot(x[context_len:], data[context_len:], color='orange', label='Forecast')
-        
-        plt.title('Forecast') 
-        plt.legend()
-        
-        plt.show()
-"""
+        plot_dataset(ds, 1000, title=f'{steps} step {model_type} forecast', prediction = data)
+    
+
 
 def train(model, device, optimizer, dataloader):
     model.train()
@@ -332,12 +302,23 @@ def test(model, device, optimizer, dataloader):
             
             cum_loss += loss.item()
             progress_bar.set_postfix(running_loss = cum_loss/(step + 1))
-                    
-    print("Validation MSE: {}".format(cum_loss/len(dataloader)))
+    
+    val_mse = cum_loss/len(dataloader)
+    print(f'Validation MSE: {val_mse}')
+    return val_mse
 
 if __name__ == '__main__':
-    output_len = 128
-    context_len = 1024
+    patch_len = 32
+    output_patch_len = 128
+    output_len = output_patch_len * 1
+    context_len = 1024*2
+    d_model = 256
+    num_heads = 4
+    num_layers = 2
+    dropout = 0.1
+    
+    model_type = 'Transformer'
+    #model_type = 'MLP'
     
     learning_rate = 3e-4
     batch_size = 32
@@ -352,15 +333,18 @@ if __name__ == '__main__':
     
     weather_ds = WeatherDataset()
 
-    ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'train')
-    ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split = 'test')
+    ds_train = TimeSeriesDataset(weather_ds, context_len, output_patch_len, split = 'train')
+    ds_test = TimeSeriesDataset(weather_ds, context_len, output_patch_len, split = 'test')
     
-    plot_dataset(ds_test[0])
+    plot_dataset(ds_test, 3000, "Weather dataset example")
 
     dl_train = DataLoader(ds_train, batch_size = batch_size, shuffle = True)
     dl_test = DataLoader(ds_test, batch_size = batch_size, shuffle = True)
     
-    model = MLPForecast(context_len, output_len)
+    if model_type == 'MLP':
+        model = MLPForecast(context_len, output_len)
+    else:    
+        model = TimeSeriesTransformer(context_len, patch_len, output_patch_len, d_model, num_heads, num_layers, dropout)
     
     optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
     model = model.to(device)
@@ -374,12 +358,14 @@ if __name__ == '__main__':
 
     print("Training completed")
     
-    print("Model parameters: {}".format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    print("Model parameters: {:,}".format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     
-    model_output = model(ds_test[0][0].unsqueeze(0).to(device)).squeeze().detach().cpu()
-    
-    plot_dataset(ds_test[6000], model_output)
-    
+    for i, example_id in enumerate([6000, 0, 3000]):
+        model_output = model(ds_test[example_id][0].unsqueeze(0).to(device)).squeeze().detach().cpu()
+        plot_dataset(ds_test, example_id, f'{model_type} Prediction Example {i + 1}', model_output)
+
+
+    autoregressive_forecast(model, steps = 5, start_idx = 1000)
 
 
 

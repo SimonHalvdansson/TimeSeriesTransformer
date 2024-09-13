@@ -416,19 +416,27 @@ h1 {
     color: black;
 }
 
-.blog .code_block pre {
+.blog pre code {
+    tab-size: 4;
     font-size: 15px;
     border-radius: 24px;
     padding-left: 24px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    overflow-x: auto;
 }
 
-.blog .figure {
+.blog .figure_container {
     width: 120%;
     margin-left: -10%;
     margin-right: -10%;
     border-radius: 16px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.blog .figure {
+    width: 100%;
+    display: block;
 }
 
 table {
