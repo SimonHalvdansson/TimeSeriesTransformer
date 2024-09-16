@@ -32,7 +32,7 @@
 
 		<hr class="squiggly-line"/>
 		<p>
-			This post is meant to serve as an introduction to transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. TimesFM is a foundation model for time series prediction which has been trained on a large corpus of data and can, but doesn't have to, be fine-tuned for specific applications. On a high level, the TimesFM model is rather vanilla and consists of an encoder which converts the input time series to a sequence of tokens, a standard decoder-only transformer implementation and a decoder which maps to the prediction vector.
+			This post is meant to serve as an implementation guide and an example of transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. TimesFM is a foundation model for time series prediction which has been trained on a large corpus of data and can, but doesn't have to, be fine-tuned for specific applications. On a high level, the TimesFM model is rather vanilla and consists of an encoder which converts the input time series to a sequence of tokens, a standard decoder-only transformer implementation and a decoder which maps to the prediction vector. Our implementation will be smaller and not support variable input length but should be usable as a starting point for additional features such as support for multivariate time series, conditioning on external variables and probabilistic output data. 
 		</p>
 
 		<p>
@@ -40,7 +40,7 @@
 		</p>
 
 		<p>
-			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that large parts of the model can be reused for other purposes. Consider e.g. an encoding procedure which takes in a time-frequency representation of historical data and a decoder which reads multiple tokens and maps them into a dictionary - this is the core of the <a target="_blank" href="https://github.com/openai/whisper">Whisper</a> automatic speech recognition (ASR) model from OpenAI. The model can also be made multivariate by increasing the input dimension of the encoder and output dimension of the decoder. We will discuss these sort of generalizations briefly in the end.
+			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that large parts of the model can be reused for other purposes. Consider e.g. an encoding procedure which takes in a time-frequency representation of historical data and a decoder which reads multiple tokens and maps them into a dictionary - this is the core of the <a target="_blank" href="https://github.com/openai/whisper">Whisper</a> automatic speech recognition (ASR) model from OpenAI. The model can also be made multivariate by increasing the input dimension of the encoder and output dimension of the decoder. This sort of "universality" is a also how multimodal LLM's work and it is my view that this emergent point of view is likely to remain fruitful in the near future.
 		</p>
 
 		<p>
@@ -58,7 +58,8 @@
 			We will use a standard weather dataset in CSV form available from <a target="_blank" href="https://www.kaggle.com/datasets/muthuj7/weather-dataset">Kaggle</a>, the first 5 rows of which can be seen below.
 		</p>
 
-		<table border="1" class="dataframe">
+		<div class="table-container">
+			<table border="1" class="dataframe">
 			<thead>
 				<tr style="text-align: right;">
 					<th>Formatted Date</th>
@@ -148,6 +149,7 @@
 				</tr>
 			</tbody>
 		</table>
+	</div>
 
 	<p>
 		From it we see that we have readings for a few weather parameters with a one hour interval. In the interest of simplicity, we restrict ourselves to just the temperature for now which is in the column with index <code>3</code>. We can write a PyTorch <code>Dataset</code> for this as follows. 
@@ -598,7 +600,7 @@ class TimeSeriesTransformer(nn.Module):
 	</div>
 
 	<p>
-		For longer forecasts, we have an additional option compared to the MLP model available which is to decode multiple tokens.
+		For longer forecasts, we can again use autoregressive decoding which yields slightly better results than in the MLP baseline case. However we also have the option reconfiguring the model to decode multiple tokens. 
 	</p>
 
 	<div class="figure_container">

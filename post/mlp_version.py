@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torchvision.transforms.functional as TF
+import torchaudio
 from torch.utils.data import Dataset, DataLoader
 
 import os
@@ -104,19 +105,92 @@ class ResidualBlock(nn.Module):
         
         return x
 
+class SpectrogramEncoder(nn.Module):
+    def __init__(self, output_dim, n_fft = 256):
+        super(SpectrogramEncoder, self).__init__()
+        
+        self.spectrogram = torchaudio.transforms.Spectrogram(
+            n_fft=n_fft,
+            hop_length=n_fft//2,
+            power=2.0
+        )
+        self.amp_to_db = torchaudio.transforms.AmplitudeToDB()
+        
+        self.conv1 = nn.Conv2d(
+            in_channels=1,
+            out_channels=64,   
+            kernel_size=(3, 1),
+            padding=(1, 0),
+            bias=False
+        )
+        
+        self.relu = nn.ReLU()
+        
+        self.conv2 = nn.Conv2d(
+            in_channels=64,
+            out_channels=output_dim,
+            kernel_size=(3, 1),
+            padding=(1, 0),
+            bias=False
+        )
+        self.relu = nn.ReLU()
+        
+        self.skip_proj = nn.Conv2d(
+            in_channels=64,
+            out_channels=output_dim,
+            kernel_size=(1, 1),
+            bias=False
+        )
+        
+        self.layer_norm = nn.LayerNorm(output_dim)
+        
+        self.mlp = nn.Sequential(
+            nn.Linear(output_dim, output_dim),
+            nn.ReLU(),
+            nn.Linear(output_dim, output_dim)
+        )
+        
+        self.dropout = nn.Dropout(p=0.3)
+        
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        
+        x = self.spectrogram(x)
+        x = self.amp_to_db(x)
+
+        x = self.conv1(x)
+        x = self.relu(x)
+
+        skip = self.skip_proj(x)        
+        x = self.conv2(x)
+        
+        x += skip
+        
+        x = self.relu(x)
+        x = self.dropout(x)
+        
+        x = x.permute(0, 3, 2, 1)
+        x = self.layer_norm(x)
+        x = x.mean(dim=2)
+        
+        x = self.mlp(x)
+        
+        return x
+        
+
 class TimeSeriesTransformer(nn.Module):
     def __init__(self,
                  context_len,
                  patch_len,
                  output_patch_len,
                  d_model,
+                 n_fft,
                  num_heads,
                  num_layers,
                  dropout):
         super().__init__()
         if context_len % patch_len != 0:
             raise Exception("context_len needs to be a multiple of patch_len")
-            
 
         self.d_model = d_model
         self.output_patch_len = output_patch_len
@@ -124,6 +198,9 @@ class TimeSeriesTransformer(nn.Module):
         self.patch_len = patch_len
         self.patches = context_len // patch_len
         
+        #self.spec_encoder = SpectrogramEncoder(output_dim = d_model, n_fft = n_fft)
+        self.spec_tokens = 2 * context_len // n_fft + 1
+                
         self.patch_encoder = ResidualBlock(input_dim = patch_len,
                                 output_dim = d_model,
                                 hidden_dim = d_model,
@@ -136,7 +213,9 @@ class TimeSeriesTransformer(nn.Module):
                                 dropout = 0,
                                 apply_ln = False)
         
-        self.pos_embedding = self.sinusoidal_positional_embedding(self.patches, d_model).to(device)
+        self.total_tokens = self.patches + self.spec_tokens*0
+        self.pos_embedding = self.sinusoidal_positional_embedding(self.total_tokens, d_model).to(device)
+        self.tgt_mask = self.generate_square_subsequent_mask(self.total_tokens).to(device)
         
         self.transformer_layers = nn.ModuleList([
             nn.TransformerDecoderLayer(d_model, num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
@@ -157,16 +236,19 @@ class TimeSeriesTransformer(nn.Module):
 
     def forward(self, x):        
         x, m, s = normalize(x)
-                
+        
+        #spectrogram_tokens = self.spec_encoder(x)
+                        
         encoded_patches = self.encode_patches(x, self.patches, self.patch_len, self.patch_encoder)
 
         x = torch.stack(encoded_patches, dim=1)
-                                
+                           
+        #x = torch.cat((x, spectrogram_tokens), dim = 1)
+                
         x = x + self.pos_embedding
                 
         for layer in self.transformer_layers:
-            tgt_mask = self.generate_square_subsequent_mask(x.size(1)).to(x.device)
-            x = layer(x, x, tgt_mask=tgt_mask, tgt_is_causal=True)
+            x = layer(x, x, tgt_mask=self.tgt_mask, tgt_is_causal=True)
         
         x = x[:, -1, :]
         x = self.patch_decoder(x)
@@ -316,6 +398,7 @@ if __name__ == '__main__':
     num_heads = 4
     num_layers = 2
     dropout = 0.1
+    n_fft = 256
     
     model_type = 'Transformer'
     #model_type = 'MLP'
@@ -344,7 +427,7 @@ if __name__ == '__main__':
     if model_type == 'MLP':
         model = MLPForecast(context_len, output_len)
     else:    
-        model = TimeSeriesTransformer(context_len, patch_len, output_patch_len, d_model, num_heads, num_layers, dropout)
+        model = TimeSeriesTransformer(context_len, patch_len, output_patch_len, d_model, n_fft, num_heads, num_layers, dropout)
     
     optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
     model = model.to(device)
