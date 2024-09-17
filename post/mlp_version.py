@@ -84,7 +84,7 @@ class ResidualBlock(nn.Module):
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
-        self.residual = nn.Linear(input_dim, output_dim)
+        self.residual = nn.Linear(input_dim, output_dim, bias=False)
         self.gelu = nn.GELU(approximate='tanh')
         self.dropout = nn.Dropout(dropout)
         
@@ -104,78 +104,6 @@ class ResidualBlock(nn.Module):
             x = self.layer_norm(x)
         
         return x
-
-class SpectrogramEncoder(nn.Module):
-    def __init__(self, output_dim, n_fft = 256):
-        super(SpectrogramEncoder, self).__init__()
-        
-        self.spectrogram = torchaudio.transforms.Spectrogram(
-            n_fft=n_fft,
-            hop_length=n_fft//2,
-            power=2.0
-        )
-        self.amp_to_db = torchaudio.transforms.AmplitudeToDB()
-        
-        self.conv1 = nn.Conv2d(
-            in_channels=1,
-            out_channels=64,   
-            kernel_size=(3, 1),
-            padding=(1, 0),
-            bias=False
-        )
-        
-        self.relu = nn.ReLU()
-        
-        self.conv2 = nn.Conv2d(
-            in_channels=64,
-            out_channels=output_dim,
-            kernel_size=(3, 1),
-            padding=(1, 0),
-            bias=False
-        )
-        self.relu = nn.ReLU()
-        
-        self.skip_proj = nn.Conv2d(
-            in_channels=64,
-            out_channels=output_dim,
-            kernel_size=(1, 1),
-            bias=False
-        )
-        
-        self.layer_norm = nn.LayerNorm(output_dim)
-        
-        self.mlp = nn.Sequential(
-            nn.Linear(output_dim, output_dim),
-            nn.ReLU(),
-            nn.Linear(output_dim, output_dim)
-        )
-        
-        self.dropout = nn.Dropout(p=0.3)
-        
-    def forward(self, x):
-        x = x.unsqueeze(1)
-        
-        x = self.spectrogram(x)
-        x = self.amp_to_db(x)
-
-        x = self.conv1(x)
-        x = self.relu(x)
-
-        skip = self.skip_proj(x)        
-        x = self.conv2(x)
-        
-        x += skip
-        
-        x = self.relu(x)
-        x = self.dropout(x)
-        
-        x = x.permute(0, 3, 2, 1)
-        x = self.layer_norm(x)
-        x = x.mean(dim=2)
-        
-        x = self.mlp(x)
-        
-        return x
         
 
 class TimeSeriesTransformer(nn.Module):
@@ -189,18 +117,12 @@ class TimeSeriesTransformer(nn.Module):
                  num_layers,
                  dropout):
         super().__init__()
-        if context_len % patch_len != 0:
-            raise Exception("context_len needs to be a multiple of patch_len")
 
-        self.d_model = d_model
         self.output_patch_len = output_patch_len
         
         self.patch_len = patch_len
         self.patches = context_len // patch_len
-        
-        #self.spec_encoder = SpectrogramEncoder(output_dim = d_model, n_fft = n_fft)
-        self.spec_tokens = 2 * context_len // n_fft + 1
-                
+                        
         self.patch_encoder = ResidualBlock(input_dim = patch_len,
                                 output_dim = d_model,
                                 hidden_dim = d_model,
@@ -213,12 +135,15 @@ class TimeSeriesTransformer(nn.Module):
                                 dropout = 0,
                                 apply_ln = False)
         
-        self.total_tokens = self.patches + self.spec_tokens*0
-        self.pos_embedding = self.sinusoidal_positional_embedding(self.total_tokens, d_model).to(device)
-        self.tgt_mask = self.generate_square_subsequent_mask(self.total_tokens).to(device)
+        self.pos_embedding = self.sin_pos_emb(self.patches, d_model).to(device)
+        self.tgt_mask = self.causal_mask(self.patches).to(device)
         
         self.transformer_layers = nn.ModuleList([
-            nn.TransformerDecoderLayer(d_model, num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
+            nn.TransformerEncoderLayer(d_model,
+                                       num_heads,
+                                       dim_feedforward=d_model * 4,
+                                       dropout=dropout,
+                                       batch_first=True)
             for _ in range(num_layers)
         ])
         
@@ -236,29 +161,24 @@ class TimeSeriesTransformer(nn.Module):
 
     def forward(self, x):        
         x, m, s = normalize(x)
-        
-        #spectrogram_tokens = self.spec_encoder(x)
-                        
+                                
         encoded_patches = self.encode_patches(x, self.patches, self.patch_len, self.patch_encoder)
 
         x = torch.stack(encoded_patches, dim=1)
-                           
-        #x = torch.cat((x, spectrogram_tokens), dim = 1)
                 
         x = x + self.pos_embedding
                 
         for layer in self.transformer_layers:
-            x = layer(x, x, tgt_mask=self.tgt_mask, tgt_is_causal=True)
+            x = layer(x, src_mask=self.tgt_mask, is_causal=True)
         
         x = x[:, -1, :]
         x = self.patch_decoder(x)
-        x = x.view(x.shape[0], self.output_patch_len)
         
         x = un_normalize(x, m, s)
         
         return x
     
-    def sinusoidal_positional_embedding(self, num_positions, d_model):
+    def sin_pos_emb(self, num_positions, d_model):
         position = torch.arange(0, num_positions).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
         
@@ -270,7 +190,7 @@ class TimeSeriesTransformer(nn.Module):
         
         return pos_embedding
     
-    def generate_square_subsequent_mask(self, sz):
+    def causal_mask(self, sz):
         mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
         return mask
     
@@ -322,9 +242,7 @@ def plot_dataset(ds, idx, title, prediction=None):
 
 
 def autoregressive_forecast(model, steps = 10, start_idx = 3000):
-    #new dataset with longer output_len
     ds = TimeSeriesDataset(weather_ds, context_len, output_patch_len * steps, split = 'test')
-    
     data = ds[start_idx][0].to(device)
     
     model.eval()
@@ -404,7 +322,7 @@ if __name__ == '__main__':
     #model_type = 'MLP'
     
     learning_rate = 3e-4
-    batch_size = 32
+    batch_size = 32*2
     max_epochs = 1
 
     device = 'cpu'
