@@ -391,7 +391,6 @@ h1 {
 
 .blog ul {
     font-size: 20px;
-
 }
 
 .blog h1 {
@@ -435,11 +434,45 @@ h1 {
     overflow: hidden;
 }
 
+.blog .figure_container_small {
+    width: 75%;
+    padding-left: 42px;
+    padding-right: 42px;
+    padding-top: 4px;
+    padding-bottom: 14px;
+    background: white;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 16px;
+    box-shadow: 0 10px 16px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.blog .figure_caption {
+    font-size: 14px;
+    font-family: 'Roboto Mono';
+    font-style: italic;
+    margin-top: 12px;
+    margin-bottom: 16px;
+    margin-left: 9%;
+    margin-right: 9%;
+}
+
+.blog .figure_caption .caption_title {
+    font-weight: bold;
+}
+
 @media (max-width: 1120px) {
     .blog .figure_container {
         width: calc(100%);
         margin-left: 0;
         margin-right: 0;
+    }
+}
+
+@media (max-width: 890px) {
+    .blog .figure_container_small {
+        width: 100%;
     }
 }
 
@@ -449,32 +482,34 @@ h1 {
 }
 
 .blog .table-container {
-    max-width: 100vw;
-    overflow-x: scroll;
-    width: 120%;
+    /*width: 120%;
     margin-left: -10%;
-    margin-right: -10%;
-    padding-top: 32px;
-    padding-bottom: 32px;
+    padding-top: -10%;
+    padding-bottom: 32px;*/
 }
 
-table {
-    width: 100%;
+.blog table {
+    width: 130%;
+    margin-left: -15%;
+    margin-right: -15%;
     border-collapse: collapse;
     box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
     border-radius: 18px;
+    padding-left: 16px;
+    padding-right: 16px;
     overflow: hidden;
     color: black;
+    box-sizing: border-box;
     background-color: #DADDDA;
 }
 
-thead {
+.blog thead {
   background-color: #DADDDA;
   color: black;
   text-align: left;
 }
 
-thead th {
+.blog thead th {
     padding-top: 16px;
     padding-bottom: 16px;
     padding-left: 14px;
@@ -484,43 +519,62 @@ thead th {
     font-size: 13px;
 }
 
-tbody tr {
+.blog tbody tr {
   border-bottom: none;
   transition: background-color 0.3s;
 }
 
-tbody tr:last-of-type {
+.blog tbody tr:last-of-type {
   border-bottom: none;
 }
 
-tbody td {
+.blog tbody td {
   padding: 12px 15px;
   font-size: 14px;
 }
 
-tbody tr:nth-child(even) {
+.blog tbody tr:nth-child(even) {
   background-color: #fafafa;
 }
 
-tbody tr:nth-child(odd) {
+.blog tbody tr:nth-child(odd) {
   background-color: #f1f1f1;
 }
 
 @media (max-width: 1200px) {
-  table {
-    font-size: 12px;
-  }
-  thead {
-    font-size: 12px;
-  }
-  tbody td {
-    padding: 6px;
-  }
+    .blog table {
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+        border-collapse: collapse;
+        box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
+        border-radius: 18px;
+        padding-left: 16px;
+        padding-right: 16px;
+        overflow: hidden;
+        color: black;
+        box-sizing: border-box;
+        background-color: #DADDDA;
+    }
+    .blog table {
+        font-size: 12px;
+    }
 
-  thead th {
-    padding-left: 6px;
-    padding-right: 6px;
-  }
+    .blog thead {
+        font-size: 12px;
+    }
+
+    .blog tbody td {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    .blog thead th {
+        padding-left: 6px;
+        padding-right: 6px;
+    }
 }
 
 @media (max-width: 1120px) {
@@ -546,11 +600,38 @@ tbody tr:nth-child(odd) {
 }
 
 @media (max-width: 920px) {
-    table {
-        font-size: 5px !important;
+    .blog .table-container {
+        width: 100vw;
+        margin-left: -5vw;
+        margin-right: -5vw;
+        overflow-x: scroll;
+        padding-bottom: 24px;
+        padding-left: 16px;
+        padding-right: 16px;
     }
+
     thead {
         font-size: 5px;
     }   
 
+}
+
+@media (max-width: 768px) {
+    .blog p {
+        font-size: 18px;
+    }
+
+    .blog ul {
+        font-size: 18px;
+    }
+
+    .blog p code,
+    .blog ul code {
+        background-color: white;
+        padding-left: 2px;
+        padding-right: 2px;
+        border-radius: 5px;
+        font-size: 15px;
+        color: black;
+    }
 }
