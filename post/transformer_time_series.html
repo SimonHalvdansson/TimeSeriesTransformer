@@ -573,10 +573,9 @@ class TimeSeriesTransformer(nn.Module):
 	def forward(self, x):        
 		x, m, s = normalize(x)
 								
-        encoded_patches = self.encode_patches(x,
-                                              self.patches,
-                                              self.patch_len,
-                                              self.patch_encoder)
+		encoded_patches = self.encode_patches(
+			x, self.patches, self.patch_len, self.patch_encoder
+		)
 
 		x = torch.stack(encoded_patches, dim=1)
 				

@@ -616,9 +616,17 @@ h1 {
 
 }
 
-@media (max-width: 768px) {
+@media (max-width: 800px) {
+    .blog .subtitle {
+        font-size: 14px;
+    }
+
     .blog p {
         font-size: 18px;
+    }
+
+    .blog h1 {
+        font-size: 46px;
     }
 
     .blog ul {
@@ -627,11 +635,51 @@ h1 {
 
     .blog p code,
     .blog ul code {
-        background-color: white;
-        padding-left: 2px;
-        padding-right: 2px;
-        border-radius: 5px;
         font-size: 15px;
-        color: black;
+    }
+
+    .blog pre code {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 600px) {
+    .blog .subtitle {
+        font-size: 13px;
+    }
+
+    .blog p {
+        font-size: 17px;
+    }
+
+    .blog h1 {
+        font-size: 40px;
+    }
+
+    .blog ul {
+        font-size: 17px;
+    }
+
+    .blog p code,
+    .blog ul code {
+        font-size: 15px;
+    }
+
+    .blog pre code {
+        font-size: 12px;
+        tab-size: 2;
+    }
+
+    .blog .figure_container_small {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 4px;
+        padding-bottom: 14px;
+    }
+
+    .blog .figure_caption {
+        font-size: 12px;
+        margin-left: 5%;
+        margin-right: 5%;
     }
 }

@@ -146,7 +146,7 @@ class TimeSeriesTransformer(nn.Module):
 
         self.patch_len = patch_len
         self.patches = context_len // patch_len
-        
+
         self.output_patches = output_len // output_patch_len
         self.tokens = self.patches + self.output_patches
 
@@ -182,7 +182,9 @@ class TimeSeriesTransformer(nn.Module):
             ]
         )
 
-        self.tgt_mask = self.causal_mask(self.tokens)
+        self.register_buffer("tgt_mask", self.causal_mask(self.tokens))
+
+        #self.tgt_mask = self.causal_mask(self.tokens)
 
     def encode_patches(self, x, patches, patch_len, encoder):
         x = x.view(x.shape[0], patches, patch_len)
@@ -194,13 +196,13 @@ class TimeSeriesTransformer(nn.Module):
             encoded_patches.append(encoded_patch)
 
         return encoded_patches
-    
+
     def decode_patches(self, x, output_patches, output_patch_len, decoder):
         decoded_patches = []
-        
+
         for i in range(1, output_patches + 1):
             decoded_patches.append(decoder(x[:, -i, :]))
-        
+
         return torch.cat(decoded_patches, dim=1)
 
     def forward(self, x):
@@ -218,10 +220,12 @@ class TimeSeriesTransformer(nn.Module):
         for layer in self.transformer_layers:
             x = layer(x, src_mask=self.tgt_mask, is_causal=True)
 
-        x = self.decode_patches(x, self.output_patches, self.output_patch_len, self.patch_decoder)
+        x = self.decode_patches(
+            x, self.output_patches, self.output_patch_len, self.patch_decoder
+        )
 
-        #x = x[:, -1, :]
-        #x = self.patch_decoder(x)
+        # x = x[:, -1, :]
+        # x = self.patch_decoder(x)
 
         x = un_normalize(x, m, s)
 
@@ -241,10 +245,10 @@ def normalize(x, m=None, s=None):
 
 
 def un_normalize(x, m, s):
-    #print(x.shape)
-    #print(m.shape)
-    #print(s.shape)
-    
+    # print(x.shape)
+    # print(m.shape)
+    # print(s.shape)
+
     return (x * s) + m
 
 
@@ -260,7 +264,7 @@ def normalized_mse(series, pred, target):
 def plot_dataset(ds, idx, title, prediction=None):
     plt.figure(figsize=(16, 3), dpi=200)
 
-    x = np.arange(context_len + output_len)
+    x = np.arange(context_len + len(ds[idx][1]))
     last_val = np.array([ds[idx][0][-1].numpy()])
 
     future = np.concatenate((last_val, ds[idx][1].numpy()))
@@ -286,9 +290,7 @@ def plot_dataset(ds, idx, title, prediction=None):
 
 
 def autoregressive_forecast(model, steps=10, start_idx=3000):
-    ds = TimeSeriesDataset(
-        weather_ds, context_len, output_len * steps, split="test"
-    )
+    ds = TimeSeriesDataset(weather_ds, context_len, output_len * steps, split="test")
     data = ds[start_idx][0].to(device)
 
     model.eval()
@@ -359,11 +361,12 @@ def test(model, device, optimizer, dataloader):
 if __name__ == "__main__":
     patch_len = 32
     output_patch_len = 128
-    output_len = output_patch_len * 4
-    context_len = 1024 * 2
+    output_patches = 4
+    output_len = output_patch_len * output_patches
+    context_len = 2048
     d_model = 256
     num_heads = 4
-    num_layers = 2
+    num_layers = 4
     dropout = 0.1
     n_fft = 256
 
@@ -372,7 +375,7 @@ if __name__ == "__main__":
 
     learning_rate = 3e-4
     batch_size = 32 * 2
-    max_epochs = 1
+    max_epochs = 5
 
     device = "cpu"
 
@@ -383,9 +386,7 @@ if __name__ == "__main__":
 
     weather_ds = WeatherDataset()
 
-    ds_train = TimeSeriesDataset(
-        weather_ds, context_len, output_len, split="train"
-    )
+    ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
     ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split="test")
 
     plot_dataset(ds_test, 3000, "Weather dataset example")
@@ -427,6 +428,8 @@ if __name__ == "__main__":
     )
 
     for i, example_id in enumerate([6000, 0, 3000]):
+        multitoken = " multi-token" if output_patches > 1 else ""
+        
         model_output = (
             model(ds_test[example_id][0].unsqueeze(0).to(device))
             .squeeze()
