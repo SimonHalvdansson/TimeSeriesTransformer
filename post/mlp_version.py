@@ -135,7 +135,6 @@ class TimeSeriesTransformer(nn.Module):
         output_patch_len,
         output_len,
         d_model,
-        n_fft,
         num_heads,
         num_layers,
         dropout,
@@ -183,8 +182,6 @@ class TimeSeriesTransformer(nn.Module):
         )
 
         self.register_buffer("tgt_mask", self.causal_mask(self.tokens))
-
-        #self.tgt_mask = self.causal_mask(self.tokens)
 
     def encode_patches(self, x, patches, patch_len, encoder):
         x = x.view(x.shape[0], patches, patch_len)
@@ -245,10 +242,6 @@ def normalize(x, m=None, s=None):
 
 
 def un_normalize(x, m, s):
-    # print(x.shape)
-    # print(m.shape)
-    # print(s.shape)
-
     return (x * s) + m
 
 
@@ -262,7 +255,7 @@ def normalized_mse(series, pred, target):
 
 
 def plot_dataset(ds, idx, title, prediction=None):
-    plt.figure(figsize=(16, 3), dpi=200)
+    plt.figure(figsize=(16, 3), dpi=140)
 
     x = np.arange(context_len + len(ds[idx][1]))
     last_val = np.array([ds[idx][0][-1].numpy()])
@@ -284,12 +277,12 @@ def plot_dataset(ds, idx, title, prediction=None):
 
     plt.tight_layout()
 
-    plt.savefig(title.lower().replace(" ", "_") + ".png", format="png", dpi=200)
+    plt.savefig(title.lower().replace(" ", "_") + ".png", format="png", dpi=140)
 
     plt.show()
 
 
-def autoregressive_forecast(model, steps=10, start_idx=3000):
+def autoregressive_forecast(model, title="", steps=10, start_idx=3000):
     ds = TimeSeriesDataset(weather_ds, context_len, output_len * steps, split="test")
     data = ds[start_idx][0].to(device)
 
@@ -305,9 +298,118 @@ def autoregressive_forecast(model, steps=10, start_idx=3000):
         data = data.detach().cpu().squeeze()[context_len:]
 
         plot_dataset(
-            ds, 1000, title=f"{steps} step {model_type} forecast", prediction=data
+            ds, 1000, title=title, prediction=data
         )
 
+def compare_multi_token():
+    full_res = []
+    repeats = 5
+
+    for multiple in [2, 3, 4, 5]:
+        output_len = output_patch_len * output_patches
+        
+        ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
+        ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split="test")
+
+        dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
+        dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=True)
+        
+        mul_res = []
+        for mode in ["multi_token", "long_output"]:
+            
+            losses = []
+            
+            for repeat in range(repeats):
+                model = TimeSeriesTransformer(
+                    context_len,
+                    patch_len,
+                    output_len if mode == "long_output" else output_patch_len,
+                    output_len,
+                    d_model,
+                    num_heads,
+                    num_layers,
+                    dropout,
+                )
+                model = model.to(device)
+                
+                final_loss = 0
+                
+                print("")
+                print(f"Starting training with repeat: {repeat+1}, multiple: {multiple}, mode: {mode}")
+                print("")
+                
+                for epoch in range(max_epochs):
+                    print("--------Epoch {}--------".format(epoch + 1))
+                    train(model, device, optimizer, dl_train)
+                    final_loss = test(model, device, optimizer, dl_test)
+                    
+                losses.append(final_loss)
+                
+            mul_res.append(([losses], np.array(losses).mean(), np.array(losses).std(), mode, multiple))
+            
+        full_res.append(mul_res)
+        
+    # Extract unique multiples
+    multiples = sorted(list(set(entry[0][4]*128 for entry in full_res)))  # [2, 3, 4, 5]
+    multiples = ["256 = 128×2", "384 = 128×3", "512 = 128×4", "640 = 128×5"]
+    
+    # Initialize dictionaries to hold means and stds for each mode
+    means = {'multi_token': [], 'long_output': []}
+    stds = {'multi_token': [], 'long_output': []}
+    
+    # Populate the means and stds dictionaries
+    for mul_res in full_res:
+        for res in mul_res:
+            _, mean, std, mode, multiple = res
+            means[mode].append(mean)
+            stds[mode].append(std)
+    
+    # Define bar properties
+    bar_width = 0.35
+    index = np.arange(len(multiples))
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=140)
+    
+    # Plot bars for 'multi_token'
+    bars1 = ax.bar(index - bar_width/2, means['multi_token'], bar_width, yerr=stds['multi_token'],
+                   label='Multi-token', capsize=5, color='skyblue', edgecolor='black')
+    
+    # Plot bars for 'long_output'
+    bars2 = ax.bar(index + bar_width/2, means['long_output'], bar_width, yerr=stds['long_output'],
+                   label='Long output', capsize=5, color='salmon', edgecolor='black')
+    
+    # Add labels and title
+    ax.set_xlabel('Output length', fontsize=12)
+    ax.set_ylabel('Mean MSE', fontsize=12)
+    ax.set_title('Multi-token vs. long output mean MSE', fontsize=14)
+    ax.set_xticks(index)
+    ax.set_xticklabels(multiples)
+    ax.legend()
+    
+    # Add grid for better readability
+    ax.yaxis.grid(True, linestyle='--', which='major', color='grey', alpha=0.7)
+    
+    def autolabel(bars, stds_list):
+        """Attach a text label above each bar displaying its height plus std."""
+        for bar, std in zip(bars, stds_list):
+            height = bar.get_height()
+            ax.annotate(f'{height:.2f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height + std),
+                        xytext=(0, 5),  # 5 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    autolabel(bars1, stds['multi_token'])
+    autolabel(bars2, stds['long_output'])
+            
+    plt.tight_layout()
+
+    plt.savefig("multi-token_vs_output_len.png", format="png", dpi=140)
+    
+    plt.show()
+        
+        
 
 def train(model, device, optimizer, dataloader):
     model.train()
@@ -323,9 +425,7 @@ def train(model, device, optimizer, dataloader):
         target = target.to(device)
 
         pred = model(series).squeeze()
-
         loss = normalized_mse(series, pred, target)
-        losses.append(loss.item())
 
         loss.backward()
         optimizer.step()
@@ -361,21 +461,23 @@ def test(model, device, optimizer, dataloader):
 if __name__ == "__main__":
     patch_len = 32
     output_patch_len = 128
-    output_patches = 4
-    output_len = output_patch_len * output_patches
+
     context_len = 2048
     d_model = 256
     num_heads = 4
     num_layers = 4
     dropout = 0.1
-    n_fft = 256
 
     model_type = "Transformer"
-    # model_type = 'MLP'
-
+    #model_type = 'MLP'
+    output_patches = 4
+    ar_steps = 5
+    
+    output_len = output_patch_len * output_patches
+    
     learning_rate = 3e-4
     batch_size = 32 * 2
-    max_epochs = 5
+    max_epochs = 4
 
     device = "cpu"
 
@@ -383,7 +485,7 @@ if __name__ == "__main__":
         device = "cuda"
     elif torch.backends.mps.is_available():
         device = "mps"
-
+        
     weather_ds = WeatherDataset()
 
     ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
@@ -403,7 +505,6 @@ if __name__ == "__main__":
             output_patch_len,
             output_len,
             d_model,
-            n_fft,
             num_heads,
             num_layers,
             dropout,
@@ -411,8 +512,6 @@ if __name__ == "__main__":
 
     optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
     model = model.to(device)
-
-    losses = []
 
     for epoch in range(max_epochs):
         print("--------Epoch {}--------".format(epoch + 1))
@@ -439,8 +538,14 @@ if __name__ == "__main__":
         plot_dataset(
             ds_test,
             example_id,
-            f"{model_type} Prediction Example {i + 1}",
+            f"{model_type}{multitoken} prediction example {i + 1}",
             model_output,
         )
+        
+    autoregressive_forecast(model, title=f"{ar_steps} step {model_type}{multitoken} forecast", steps=ar_steps, start_idx=1000)
+    
+    compare_multi_token()
 
-    autoregressive_forecast(model, steps=5, start_idx=1000)
+            
+            
+        

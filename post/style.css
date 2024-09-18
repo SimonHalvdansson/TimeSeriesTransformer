@@ -357,22 +357,47 @@ h1 {
     margin-bottom: 20px;
 }
 
-.blog {
-    padding-top: 0px;
-    font-size: 22px;
-    margin-block-start: 3em;
-    margin-block-end: 1em;
-}
 
-@media (min-width: 768px) {
-    .blog {
-        padding-top: 70px;
-    }
-}
 
 
 .blog {
+    font-size: 19px;
     color: #512725;
+}
+
+#back_container {
+    padding-top: 40px;
+}
+
+.blog .back {
+    text-decoration: none;
+    font-size: 14px;
+    font-family: 'Roboto Mono', monospace;
+    text-transform: uppercase;
+    font-weight: 900;
+    color: rgba(81, 39, 37, 0.5);
+    text-underline-offset: 4px;
+    text-decoration: underline;
+    text-decoration-color: rgba(81, 39, 37, 0.3);
+    border-bottom: none;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    padding-right: 28px;
+    padding-left: 14px;
+    margin-left: -14px;
+    border-radius: 25px;
+    transition: background 200ms, color 200ms, text-decoration-color 200ms;
+}
+
+.blog .back:hover {
+    background: rgba(81, 39, 37, 0.1);;
+    text-decoration-color: rgba(81, 39, 37, 0.6);
+    color: rgba(81, 39, 37, 0.6);
+}
+
+.post {
+    padding-top: 52px;
+    padding-bottom: 70px;
 }
 
 .blog .subtitle {
@@ -384,13 +409,8 @@ h1 {
 }
 
 .blog p {
-    font-size: 20px;
     line-height: 1.52em;
     margin-top: 14px;
-}
-
-.blog ul {
-    font-size: 20px;
 }
 
 .blog h1 {
@@ -403,6 +423,13 @@ h1 {
     text-decoration: none;
     border-bottom: 2px solid #512725;
     transition: border-bottom-width 150ms ease;
+}
+
+.blog .comment {
+    font-style: italic;
+    opacity: 0.7;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 14px;
 }
 
 .blog p code,
@@ -430,7 +457,8 @@ h1 {
     margin-left: -10%;
     margin-right: -10%;
     border-radius: 16px;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    box-shadow: 0 10px 8px rgba(0, 0, 0, 0.07);
     overflow: hidden;
 }
 
@@ -448,12 +476,21 @@ h1 {
     overflow: hidden;
 }
 
+.blog .figure {
+    width: 100%;
+    display: block;
+}
+
+.fancybox__toolbar {
+    display: none !important;
+}
+
 .blog .figure_caption {
     font-size: 14px;
     font-family: 'Roboto Mono';
     font-style: italic;
-    margin-top: 12px;
-    margin-bottom: 16px;
+    margin-top: 14px;
+    margin-bottom: 18px;
     margin-left: 9%;
     margin-right: 9%;
 }
@@ -476,16 +513,8 @@ h1 {
     }
 }
 
-.blog .figure {
-    width: 100%;
-    display: block;
-}
-
 .blog .table-container {
-    /*width: 120%;
-    margin-left: -10%;
-    padding-top: -10%;
-    padding-bottom: 32px;*/
+    padding-bottom: 8px;
 }
 
 .blog table {
@@ -493,7 +522,7 @@ h1 {
     margin-left: -15%;
     margin-right: -15%;
     border-collapse: collapse;
-    box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 14px rgba(0, 0, 0, 0.07);
     border-radius: 18px;
     padding-left: 16px;
     padding-right: 16px;
@@ -546,15 +575,6 @@ h1 {
         width: 100%;
         margin-left: 0;
         margin-right: 0;
-        border-collapse: collapse;
-        box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
-        border-radius: 18px;
-        padding-left: 16px;
-        padding-right: 16px;
-        overflow: hidden;
-        color: black;
-        box-sizing: border-box;
-        background-color: #DADDDA;
     }
     .blog table {
         font-size: 12px;
@@ -599,20 +619,25 @@ h1 {
     }
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1000px) {
     .blog .table-container {
-        width: 100vw;
+        width: calc(100vw - 15px);
         margin-left: -5vw;
         margin-right: -5vw;
-        overflow-x: scroll;
+        overflow-x: auto;
         padding-bottom: 24px;
         padding-left: 16px;
         padding-right: 16px;
+        box-sizing: border-box;
     }
 
-    thead {
-        font-size: 5px;
-    }   
+    .blog tbody td {
+        font-size: 11px;
+    }
+
+    .blog thead th {
+        font-size: 11px;
+    }
 
 }
 
@@ -621,16 +646,12 @@ h1 {
         font-size: 14px;
     }
 
-    .blog p {
+    .blog {
         font-size: 18px;
     }
 
     .blog h1 {
         font-size: 46px;
-    }
-
-    .blog ul {
-        font-size: 18px;
     }
 
     .blog p code,
@@ -648,16 +669,12 @@ h1 {
         font-size: 13px;
     }
 
-    .blog p {
+    .blog {
         font-size: 17px;
     }
 
     .blog h1 {
         font-size: 40px;
-    }
-
-    .blog ul {
-        font-size: 17px;
     }
 
     .blog p code,
@@ -681,5 +698,9 @@ h1 {
         font-size: 12px;
         margin-left: 5%;
         margin-right: 5%;
+    }
+
+    .blog .comment {
+        font-size: 12px;
     }
 }
