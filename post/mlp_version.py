@@ -303,10 +303,10 @@ def autoregressive_forecast(model, title="", steps=10, start_idx=3000):
 
 def compare_multi_token():
     full_res = []
-    repeats = 5
+    repeats = 6
 
     for multiple in [2, 3, 4, 5]:
-        output_len = output_patch_len * output_patches
+        output_len = output_patch_len * multiple
         
         ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
         ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split="test")
@@ -331,13 +331,14 @@ def compare_multi_token():
                     dropout,
                 )
                 model = model.to(device)
+                optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
                 
                 final_loss = 0
                 
                 print("")
                 print(f"Starting training with repeat: {repeat+1}, multiple: {multiple}, mode: {mode}")
                 print("")
-                
+                                
                 for epoch in range(max_epochs):
                     print("--------Epoch {}--------".format(epoch + 1))
                     train(model, device, optimizer, dl_train)
@@ -345,7 +346,7 @@ def compare_multi_token():
                     
                 losses.append(final_loss)
                 
-            mul_res.append(([losses], np.array(losses).mean(), np.array(losses).std(), mode, multiple))
+            mul_res.append(([losses], np.array(losses).mean(), np.array(losses).std()/math.sqrt(repeats), mode, multiple))
             
         full_res.append(mul_res)
         
@@ -438,7 +439,7 @@ def test(model, device, optimizer, dataloader):
     model.eval()
     optimizer.eval()
 
-    progress_bar = tqdm(dataloader, desc="Validating", leave=True)
+    progress_bar = tqdm(dataloader, desc="Testing", leave=True)
 
     cum_loss = 0
 
@@ -454,7 +455,7 @@ def test(model, device, optimizer, dataloader):
             progress_bar.set_postfix(running_loss=cum_loss / (step + 1))
 
     val_mse = cum_loss / len(dataloader)
-    print(f"Validation MSE: {val_mse}")
+    print(f"Training MSE: {val_mse}")
     return val_mse
 
 
@@ -477,7 +478,7 @@ if __name__ == "__main__":
     
     learning_rate = 3e-4
     batch_size = 32 * 2
-    max_epochs = 4
+    max_epochs = 5
 
     device = "cpu"
 
@@ -485,9 +486,9 @@ if __name__ == "__main__":
         device = "cuda"
     elif torch.backends.mps.is_available():
         device = "mps"
-        
+    
     weather_ds = WeatherDataset()
-
+    
     ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
     ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split="test")
 
