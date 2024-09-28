@@ -466,7 +466,7 @@ h1 {
     width: 75%;
     padding-left: 42px;
     padding-right: 42px;
-    padding-top: 4px;
+    padding-top: 8px;
     padding-bottom: 14px;
     background: white;
     margin-left: auto;
@@ -511,6 +511,18 @@ h1 {
     .blog .figure_container_small {
         width: 100%;
     }
+}
+
+.blog .final_button_container {
+
+}
+
+.blog .final_button {
+    display: block;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 20px;
 }
 
 .blog .table-container {
@@ -703,4 +715,107 @@ h1 {
     .blog .comment {
         font-size: 12px;
     }
+}
+
+
+
+
+@property --border-angle-1 {
+	syntax: "<angle>";
+	inherits: true;
+	initial-value: 0deg;
+}
+
+@property --border-angle-2 {
+	syntax: "<angle>";
+	inherits: true;
+	initial-value: 90deg;
+}
+
+@property --border-angle-3 {
+	syntax: "<angle>";
+	inherits: true;
+	initial-value: 180deg;
+}
+:root {
+	--bright-blue: #DAFAAF;
+	--bright-green: #C1E7FE;
+	--bright-red: #FBDEAC;
+	--background: #fbf4f3;
+	--foreground: rgb(49, 23, 22);
+	--border-size: 2px;
+	--border-radius: 0.75em;
+}
+
+@keyframes rotateBackground {
+	to { --border-angle-1: 360deg; }
+}
+
+@keyframes rotateBackground2 {
+	to { --border-angle-2: -270deg; }
+}
+
+@keyframes rotateBackground3 {
+	to { --border-angle-3: 540deg; }
+}
+
+
+.nice_button {
+    user-select: none;
+    cursor: pointer;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 20px;
+	--border-angle-1: 0deg;
+	--border-angle-2: 90deg;
+	--border-angle-3: 180deg;
+	font-size: 14px;
+	border: 0;
+    font-family: 'Roboto mono', monospace;
+    font-weight: 500;
+	padding: var(--border-size);
+	display: flex;
+	width: max-content;
+	border-radius: var(--border-radius);
+	background-color: transparent;
+	background-image: conic-gradient(
+			from var(--border-angle-1) at 10% 15%,
+			transparent,
+			var(--bright-blue) 10%,
+			transparent 30%,
+			transparent
+		),
+		conic-gradient(
+			from var(--border-angle-2) at 70% 60%,
+			transparent,
+			var(--bright-green) 10%,
+			transparent 60%,
+			transparent
+		),
+		conic-gradient(
+			from var(--border-angle-3) at 50% 20%,
+			transparent,
+			var(--bright-red) 10%,
+			transparent 50%,
+			transparent
+		);
+	animation: 
+		rotateBackground 3s linear infinite,
+		rotateBackground2 8s linear infinite,
+		rotateBackground3 13s linear infinite;
+}
+
+.nice_button a:hover {
+    background: white;
+    color: black;
+}
+
+.nice_button a {
+    display: block;
+    border-bottom: none;
+    transition: background 200ms, color 200ms;
+	background: var(--background); 
+	padding: 0.7em 1.05em;
+	border-radius: calc(var(--border-radius) - var(--border-size));
+	color: var(--foreground);
 }

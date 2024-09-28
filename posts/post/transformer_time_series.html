@@ -6,20 +6,20 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="theme-color" content="#FBEDEA" />
 
-	<link rel="shortcut icon" type="image/x-icon"  href="favicon.ico?">
-	<link rel="apple-touch-icon" href="apple-touch-icon.png">
+	<link rel="shortcut icon" type="image/x-icon"  href="../favicon.ico?">
+	<link rel="apple-touch-icon" href="../apple-touch-icon.png">
 
 	<link rel="stylesheet" href="style.css">
 
-	<!--<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>-->
+	<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
 	<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-	<link rel="stylesheet" href="atom-one-dark.min.css">
-	<script src="highlight.min.js"></script>
+	<link rel="stylesheet" href="../atom-one-dark.min.css">
+	<script src="../highlight.min.js"></script>
 
 	<script>hljs.highlightAll();</script>
 
@@ -37,17 +37,21 @@
 
 		<hr class="squiggly-line"/>
 		<p>
-			This post is meant to serve as an implementation guide and an example of transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. It is not meant as an introduction the either time-series forecasting nor transformers but rather purely to their combination. TimesFM is a foundation model for time series prediction which has been trained on a large corpus of data which can be fine-tuned for specific applications. On a high level, the TimesFM model is rather vanilla and consists of an encoder which converts the input time series to a sequence of tokens, a standard decoder-only transformer implementation and a decoder which maps to the prediction vector. Our implementation will be smaller and not support variable input length but should be usable as a starting point for additional features such as support for multivariate time series, conditioning on external variables and probabilistic output data. 
+			This post is meant to serve as an implementation guide and an example of transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. It is not meant as an introduction the either time-series forecasting nor transformers but rather purely to their combination and consequently we expect the reader to have some degree of familiarity with the basic transformer architecture. The text contains several code snippets which illustrated the main components and the goal is for the reader to be able to adapt the <a target="_blank" href="http://github.com">full implementation</a> to their own data after reading.
 		</p>
-
+		
 		<div class="figure_container_small">
-			<a data-fancybox="gallery0" href="timesfm.jpg">
-				<img class="figure" src="timesfm.jpg"></img>
+			<a data-fancybox="gallery0" href="media/timesfm.jpg">
+				<img class="figure" src="media/timesfm.jpg"></img>
 			</a>
 		</div>
 		<div class="figure_caption">
 			<span class="caption_title">Figure: </span>Illustration of the main components of TimesFM; patching of input data, residual encoding blocks to tokenization, additive positional encodings, causal self-attention transformer layers to residual decoding blocks. Image taken from original <a target="_blank" href="https://arxiv.org/pdf/2310.10688">TimesFM paper</a>.
 		</div>
+
+		<p>
+			TimesFM is a foundation model for time series prediction which has been trained on a large corpus of data which can be fine-tuned for specific applications. On a high level, the TimesFM model is rather vanilla and consists of an encoder which converts the input time series to a sequence of tokens, a standard decoder-only transformer implementation and a decoder which maps to the prediction vector. Our implementation will be smaller and not support variable input length but should be usable as a starting point for additional features such as support for multivariate time series, conditioning on external variables and probabilistic output data. 
+		</p>
 
 		<p>
 			Over the last 5 years, the field of time-series prediction has gone through something of a revolution with machine learning methods generally dominating the various leaderboards instead of statistical or hybrid models. Apart from TimesFM, foundation models such as <a target="_blank" href="https://github.com/amazon-science/chronos-forecasting">Chronos</a> by Amazon, <a target="_blank" href="https://github.com/Nixtla/nixtla">TimeGPT</a> by Nixtla and <a target="_blank" href="https://github.com/yuqinie98/PatchTST">PatchTST</a> by IBM all use transformer backbones and achieve excellent results. There are also prominent non-foundation and non-transformer based methods such as <a target="_blank" href="https://github.com/ServiceNow/N-BEATS">N-BEATS</a> and <a target="_blank" href="fnjd">Autoformer</a> with comparable results.
@@ -62,11 +66,11 @@
 		</p>
 
 		<p class="comment">
-			(Throughout the text, we will include code which is not complete but illustrated how the main components are implemented. In the end there is a GitHub link to the full implementation.)
+			Organization: We introduce the <a href="#dataset">weather dataset</a> we use, implement a <a href="#simple_mlp">simple MLP forecasting model</a> and <a href="#train">train</a> it, describe the basic of <a href="#transformer">transformers</a>, show the <a href="#full_model">full model</a> and lastly discuss <a href="#multitoken">multi-token</a> decoding for longer forecasts.
 		</p>
 
 		<hr class="squiggly-line"/>
-		<h2>Dataset</h2>
+		<h2 id="dataset">Dataset</h2>
 
 		<p>
 			We will use a standard weather dataset in CSV form available from <a target="_blank" href="https://www.kaggle.com/datasets/muthuj7/weather-dataset">Kaggle</a>, the first 5 rows of which can be seen below.
@@ -227,8 +231,8 @@ class TimeSeriesDataset(Dataset):
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery" href="weather_dataset_example.png">
-			<img class="figure" src="weather_dataset_example.png"></img>
+		<a data-fancybox="gallery" href="media/weather_dataset_example.png">
+			<img class="figure" src="media/weather_dataset_example.png"></img>
 		</a>
 	</div>
 
@@ -237,7 +241,7 @@ class TimeSeriesDataset(Dataset):
 	</p>
 
 	<hr class="squiggly-line"/>
-	<h2>MLP baseline and model generalities</h2>
+	<h2 id="simple_mlp">MLP baseline and model generalities</h2>
 
 	<p>
 		Now we turn to developing the simple multilayer-perceptron model for the baseline. Our input data, the temperatures from the table, is not dimensionless and can significantly drift over time. For this reason it is beneficial to normalize each slice we let the model act on and then invert the normalization after the model has acted. To this end, we set up the following helper functions which takes an input <code>x</code>of shape <code>(batch_size, len)</code>:
@@ -300,7 +304,7 @@ class MLPForecast(nn.Module):
 		This is basically all that is needed for this simple model. Below is the training code which is standard with dynamic <code>device</code> selection and the <code>schedulefree.AdamWScheduleFree</code> optimizer from <a target="_blank" href="https://github.com/facebookresearch/schedule_free">Meta</a>.
 	</p>
 
-	<pre><code class="language-py">
+	<pre><code class="language-py" id="train">
 if __name__ == '__main__':
 	output_len = 128
 	context_len = 2048
@@ -395,14 +399,14 @@ def test(model, device, optimizer, dataloader):
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery2" href="mlp_prediction_example_1.png">
-			<img class="figure" src="mlp_prediction_example_1.png"></img>
+		<a data-fancybox="gallery2" href="media/mlp_prediction_example_1.png">
+			<img class="figure" src="media/mlp_prediction_example_1.png"></img>
 		</a>
-		<a data-fancybox="gallery2" href="mlp_prediction_example_2.png">
-			<img class="figure" src="mlp_prediction_example_2.png"></img>
+		<a data-fancybox="gallery2" href="media/mlp_prediction_example_2.png">
+			<img class="figure" src="media/mlp_prediction_example_2.png"></img>
 		</a>
-		<a data-fancybox="gallery2" href="mlp_prediction_example_3.png">
-			<img class="figure" src="mlp_prediction_example_3.png"></img>
+		<a data-fancybox="gallery2" href="media/mlp_prediction_example_3.png">
+			<img class="figure" src="media/mlp_prediction_example_3.png"></img>
 		</a>
 	</div>
 
@@ -411,8 +415,8 @@ def test(model, device, optimizer, dataloader):
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery2" href="5_step_mlp_forecast.png">
-			<img class="figure" src="5_step_mlp_forecast.png"></img>
+		<a data-fancybox="gallery2" href="media/5_step_mlp_forecast.png">
+			<img class="figure" src="media/5_step_mlp_forecast.png"></img>
 		</a>
 	</div>
 
@@ -421,7 +425,7 @@ def test(model, device, optimizer, dataloader):
 	</p>
 
 	<hr class="squiggly-line"/>
-	<h2>Transformers</h2>
+	<h2 id="transformer">Transformers</h2>
 
 	<p>
 		While the transformer architecture was originally intended for NLP applications, it is nowadays seen more as a general compute engine to which we can attach our own encoders and decoders. There are endless variations on this "general compute engine" with different attention implementations, extra steps applied to <code>Q, K, V</code> projections and data moved in between transformer blocks. We will treat the inner transformer block as a black box to some degree and focus on mapping to and from it.
@@ -538,7 +542,7 @@ self.transformer_layers = nn.ModuleList([
 		With this we are essentially done! Below is the full code for the model where we explicitly force the model to a decoder-only mode with causal attention using a upper triangular attention mask. Using the <code>nn.TransformerEncoderLayer</code> means that we only apply self-attention and no cross attention.
 	</p>
 
-	<pre><code class="language-py">
+	<pre><code class="language-py" id="full_model">
 class TimeSeriesTransformer(nn.Module):
 	def __init__(self,
 					context_len,
@@ -623,14 +627,14 @@ class TimeSeriesTransformer(nn.Module):
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery3" href="transformer_prediction_example_1.png">
-			<img class="figure" src="transformer_prediction_example_1.png"></img>
+		<a data-fancybox="gallery3" href="media/transformer_prediction_example_1.png">
+			<img class="figure" src="media/transformer_prediction_example_1.png"></img>
 		</a>
-		<a data-fancybox="gallery3" href="transformer_prediction_example_2.png">
-			<img class="figure" src="transformer_prediction_example_2.png"></img>
+		<a data-fancybox="gallery3" href="media/transformer_prediction_example_2.png">
+			<img class="figure" src="media/transformer_prediction_example_2.png"></img>
 		</a>
-		<a data-fancybox="gallery3" href="transformer_prediction_example_3.png">
-			<img class="figure" src="transformer_prediction_example_3.png"></img>
+		<a data-fancybox="gallery3" href="media/transformer_prediction_example_3.png">
+			<img class="figure" src="media/transformer_prediction_example_3.png"></img>
 		</a>
 	</div>
 
@@ -639,8 +643,8 @@ class TimeSeriesTransformer(nn.Module):
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery3" href="5_step_transformer_forecast.png">
-			<img class="figure" src="5_step_transformer_forecast.png"></img>
+		<a data-fancybox="gallery3" href="media/5_step_transformer_forecast.png">
+			<img class="figure" src="media/5_step_transformer_forecast.png"></img>
 		</a>
 	</div>
 	
@@ -649,17 +653,10 @@ class TimeSeriesTransformer(nn.Module):
 	</p>
 	
 	<hr class="squiggly-line"/>
-	<h2>Multi-token decoding</h2>
+	<h2 id="multitoken">Multi-token decoding</h2>
 
 	<p>
-		Lastly we will look at two options for increasing the output length of our model(s) beyond the autoregressive approach.
-	</p>
-	<ul>
-		<li>Increasing <code>output_len</code></li>
-		<li>Decoding multiple tokens</li> 
-	</ul>
-	<p>
-		The first is very straight forward and for the second one we will need to need to use something like the <code>encode_patches()</code> function instead of just <code>x = self.patch_decoder(x[:, -1, :])</code>. Our <code>decode_patches()</code> function will be as follows.
+		Lastly we will look at two options for increasing the output length of our model(s) beyond the autoregressive approach; increasing <code>output_len</code> and decoding multiple tokens. The former is very straight forward but for multi-token decoding we will need to need to use something like the <code>encode_patches()</code> function instead of just <code>x = self.patch_decoder(x[:, -1, :])</code>. Our <code>decode_patches()</code> function will be as follows.
 	</p>
 
 	<pre><code class="language-py">
@@ -672,7 +669,7 @@ def decode_patches(self, x, output_patches, output_patch_len, decoder):
 	return torch.cat(decoded_patches, dim=1)
 	</code></pre>
 	<p>
-		In addition, we also add <code>output_patches = output_len // output_patch_len</code> tokens to the end of the transformer sequence so that the model has appropriate room to work on the prediction tokens.
+		In addition, we also add <code>output_patches = output_len // output_patch_len</code> tokens to the end of the transformer sequence so that the model has appropriate room to work on the prediction tokens. This is analogous to the <code>[CLS]</code> token in a BERT-style transformer.
 	</p>
 	
 	<pre><code class="language-py">
@@ -688,29 +685,32 @@ def forward(...):
 	...
 	</code></pre>
 	<p>
+		An alternative to this, employed by the <a target="_blank" href="https://arxiv.org/abs/2012.07436">Informer</a> model, is to split the transformer backbone into an encoder which acts on the history and a decoder which is padded with empty tokens - a minor change from our approach.
+	</p>
+
+	<p>
 		Below are examples for <code>output_tokens = 4</code>.
 	</p>
 
-
 	<div class="figure_container">
-		<a data-fancybox="gallery4" href="transformer_multi-token_prediction_example_1.png">
-			<img class="figure" src="transformer_multi-token_prediction_example_1.png"></img>
+		<a data-fancybox="gallery4" href="media/transformer_multi-token_prediction_example_1.png">
+			<img class="figure" src="media/transformer_multi-token_prediction_example_1.png"></img>
 		</a>
-		<a data-fancybox="gallery4" href="transformer_multi-token_prediction_example_2.png">
-			<img class="figure" src="transformer_multi-token_prediction_example_2.png"></img>
+		<a data-fancybox="gallery4" href="media/transformer_multi-token_prediction_example_2.png">
+			<img class="figure" src="media/transformer_multi-token_prediction_example_2.png"></img>
 		</a>
-		<a data-fancybox="gallery4" href="transformer_multi-token_prediction_example_3.png">
-			<img class="figure" src="transformer_multi-token_prediction_example_3.png"></img>
+		<a data-fancybox="gallery4" href="media/transformer_multi-token_prediction_example_3.png">
+			<img class="figure" src="media/transformer_multi-token_prediction_example_3.png"></img>
 		</a>
 	</div>
 
 	<p>
-		Of course, we can run the multi-token model autoregressively to get even further forecasts.
+		The increased output length likely promotes reducing the oscillation frequency of the predictions since we use the mean <span class="boldened"><i>square</i></span> error which punished errors superlinearly. Of course, we can run the multi-token model autoregressively to get even further forecasts.
 	</p>
 
 	<div class="figure_container">
-		<a data-fancybox="gallery4" href="5_step_transformer_multi-token_forecast.png">
-			<img class="figure" src="5_step_transformer_multi-token_forecast.png"></img>
+		<a data-fancybox="gallery4" href="media/5_step_transformer_multi-token_forecast.png">
+			<img class="figure" src="media/5_step_transformer_multi-token_forecast.png"></img>
 		</a>
 	</div>
 
@@ -720,8 +720,8 @@ def forward(...):
 	</p>
 
 	<div class="figure_container_small">
-		<a data-fancybox="gallery5" href="multi-token_vs_output_len.png">
-			<img class="figure" src="multi-token_vs_output_len.png"></img>
+		<a data-fancybox="gallery5" href="media/multi-token_vs_output_len.png">
+			<img class="figure" src="media/multi-token_vs_output_len.png"></img>
 		</a>
 	</div>
 	<div class="figure_caption">
@@ -732,15 +732,24 @@ def forward(...):
 		Some thoughts on this.
 	</p>
 
+	<p>
+		We've now gone through most of the model and evaluated it. As mentioned in the introduction, the full TimesFM model has some additional features. Most notable is probably the support for variable input length which is only useful for a model which is meant to be reused in different contexts. Hopefully, you the reader should be better prepared to implement/understand/use other related time series models.
+	</p>
+
 	<hr class="squiggly-line"/>
-	<h2>Closing thoughts</h2>
 
+	<button class="nice_button">
+		<a>
+			Link to full implementation
+		</a>
+	</button>
 
-	<a href="github.com" class="button">GitHub</a>
-
-
-	<link rel="stylesheet" href="fancybox.css" />
-	<script src="fancybox.umd.js"></script>
+	<p class="comment">
+		
+	</p>
+  
+	<link rel="stylesheet" href="../fancybox.css" />
+	<script src="../fancybox.umd.js"></script>
 
 	<script>
 		Fancybox.bind("[data-fancybox]", {

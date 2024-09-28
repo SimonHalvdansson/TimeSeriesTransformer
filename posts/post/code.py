@@ -277,7 +277,7 @@ def plot_dataset(ds, idx, title, prediction=None):
 
     plt.tight_layout()
 
-    plt.savefig(title.lower().replace(" ", "_") + ".png", format="png", dpi=140)
+    plt.savefig("media/" + title.lower().replace(" ", "_") + ".png", format="png", dpi=140)
 
     plt.show()
 
@@ -406,7 +406,7 @@ def compare_multi_token():
             
     plt.tight_layout()
 
-    plt.savefig("multi-token_vs_output_len.png", format="png", dpi=140)
+    plt.savefig("media/multi-token_vs_output_len.png", format="png", dpi=140)
     
     plt.show()
         
@@ -471,7 +471,7 @@ if __name__ == "__main__":
 
     model_type = "Transformer"
     #model_type = 'MLP'
-    output_patches = 4
+    output_patches = 1
     ar_steps = 5
     
     output_len = output_patch_len * output_patches
@@ -528,7 +528,7 @@ if __name__ == "__main__":
     )
 
     for i, example_id in enumerate([6000, 0, 3000]):
-        multitoken = " multi-token" if output_patches > 1 else ""
+        multitoken = " multi-token" if output_patches > 1 and model_type == "Transformer" else ""
         
         model_output = (
             model(ds_test[example_id][0].unsqueeze(0).to(device))
@@ -543,9 +543,9 @@ if __name__ == "__main__":
             model_output,
         )
         
-    autoregressive_forecast(model, title=f"{ar_steps} step {model_type}{multitoken} forecast", steps=ar_steps, start_idx=1000)
+    #autoregressive_forecast(model, title=f"{ar_steps} step {model_type}{multitoken} forecast", steps=ar_steps, start_idx=1000)
     
-    compare_multi_token()
+    #compare_multi_token()
 
             
             
