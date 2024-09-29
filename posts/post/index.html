@@ -37,7 +37,7 @@
 
 		<hr class="squiggly-line"/>
 		<p>
-			This post is meant to serve as an implementation guide and an example of transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. It is not meant as an introduction the either time-series forecasting nor transformers but rather purely to their combination and consequently we expect the reader to have some degree of familiarity with the basic transformer architecture. The text contains several code snippets which illustrated the main components and the goal is for the reader to be able to adapt the <a target="_blank" href="http://github.com">full implementation</a> to their own data after reading.
+			This post is meant to serve as an implementation guide and an example of transformer-based time series prediction with PyTorch, strongly inspired by the recent Google model TimesFM. It is not meant as an introduction the either time-series forecasting nor transformers but rather purely to their combination and consequently we expect the reader to have some degree of familiarity with the basic transformer architecture. The text contains several code snippets which illustrate the main components and the goal is for the reader to be able to adapt the <a target="_blank" href="http://github.com">full implementation</a> to their own data after reading.
 		</p>
 		
 		<div class="figure_container_small">
@@ -58,7 +58,7 @@
 		</p>
 
 		<p>
-			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that large parts of the model can be reused for other purposes. Consider e.g. an encoding procedure which takes in a time-frequency representation of historical data and a decoder which reads multiple tokens and maps them into a dictionary - this is the core of the <a target="_blank" href="https://github.com/openai/whisper">Whisper</a> automatic speech recognition (ASR) model from OpenAI. The model can also be made multivariate by increasing the input dimension of the encoder and output dimension of the decoder. This sort of "universality" is a also how multimodal LLM's work and it is my view paradigm of transformer backbones with different encoders/decoders is likely to remain fruitful in the near future.
+			As will hopefully become clear throughout the text, the fact that the encoder and decoder are decoupled from the main model means that large parts of the model can be reused for other purposes. Consider e.g. an encoding procedure which takes in a time-frequency representation of historical data and a decoder which reads multiple tokens and maps them into a dictionary - this is the core of the <a target="_blank" href="https://github.com/openai/whisper">Whisper</a> automatic speech recognition (ASR) model from OpenAI. The model can also be made multivariate by increasing the input dimension of the encoder and output dimension of the decoder. This sort of "universality" is a also how multimodal LLM's work and it is my view that the paradigm of transformer backbones with different encoders/decoders is likely to remain fruitful in the near future.
 		</p>
 
 		<p>
