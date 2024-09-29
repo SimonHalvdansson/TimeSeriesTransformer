@@ -301,116 +301,6 @@ def autoregressive_forecast(model, title="", steps=10, start_idx=3000):
             ds, 1000, title=title, prediction=data
         )
 
-def compare_multi_token():
-    full_res = []
-    repeats = 6
-
-    for multiple in [2, 3, 4, 5]:
-        output_len = output_patch_len * multiple
-        
-        ds_train = TimeSeriesDataset(weather_ds, context_len, output_len, split="train")
-        ds_test = TimeSeriesDataset(weather_ds, context_len, output_len, split="test")
-
-        dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
-        dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=True)
-        
-        mul_res = []
-        for mode in ["multi_token", "long_output"]:
-            
-            losses = []
-            
-            for repeat in range(repeats):
-                model = TimeSeriesTransformer(
-                    context_len,
-                    patch_len,
-                    output_len if mode == "long_output" else output_patch_len,
-                    output_len,
-                    d_model,
-                    num_heads,
-                    num_layers,
-                    dropout,
-                )
-                model = model.to(device)
-                optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=learning_rate)
-                
-                final_loss = 0
-                
-                print("")
-                print(f"Starting training with repeat: {repeat+1}, multiple: {multiple}, mode: {mode}")
-                print("")
-                                
-                for epoch in range(max_epochs):
-                    print("--------Epoch {}--------".format(epoch + 1))
-                    train(model, device, optimizer, dl_train)
-                    final_loss = test(model, device, optimizer, dl_test)
-                    
-                losses.append(final_loss)
-                
-            mul_res.append(([losses], np.array(losses).mean(), np.array(losses).std()/math.sqrt(repeats), mode, multiple))
-            
-        full_res.append(mul_res)
-        
-    # Extract unique multiples
-    multiples = sorted(list(set(entry[0][4]*128 for entry in full_res)))  # [2, 3, 4, 5]
-    multiples = ["256 = 128×2", "384 = 128×3", "512 = 128×4", "640 = 128×5"]
-    
-    # Initialize dictionaries to hold means and stds for each mode
-    means = {'multi_token': [], 'long_output': []}
-    stds = {'multi_token': [], 'long_output': []}
-    
-    # Populate the means and stds dictionaries
-    for mul_res in full_res:
-        for res in mul_res:
-            _, mean, std, mode, multiple = res
-            means[mode].append(mean)
-            stds[mode].append(std)
-    
-    # Define bar properties
-    bar_width = 0.35
-    index = np.arange(len(multiples))
-    
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=140)
-    
-    # Plot bars for 'multi_token'
-    bars1 = ax.bar(index - bar_width/2, means['multi_token'], bar_width, yerr=stds['multi_token'],
-                   label='Multi-token', capsize=5, color='skyblue', edgecolor='black')
-    
-    # Plot bars for 'long_output'
-    bars2 = ax.bar(index + bar_width/2, means['long_output'], bar_width, yerr=stds['long_output'],
-                   label='Long output', capsize=5, color='salmon', edgecolor='black')
-    
-    # Add labels and title
-    ax.set_xlabel('Output length', fontsize=12)
-    ax.set_ylabel('Mean MSE', fontsize=12)
-    ax.set_title('Multi-token vs. long output mean MSE', fontsize=14)
-    ax.set_xticks(index)
-    ax.set_xticklabels(multiples)
-    ax.legend()
-    
-    # Add grid for better readability
-    ax.yaxis.grid(True, linestyle='--', which='major', color='grey', alpha=0.7)
-    
-    def autolabel(bars, stds_list):
-        """Attach a text label above each bar displaying its height plus std."""
-        for bar, std in zip(bars, stds_list):
-            height = bar.get_height()
-            ax.annotate(f'{height:.2f}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height + std),
-                        xytext=(0, 5),  # 5 points vertical offset
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontsize=9, fontweight='bold')
-    
-    autolabel(bars1, stds['multi_token'])
-    autolabel(bars2, stds['long_output'])
-            
-    plt.tight_layout()
-
-    plt.savefig("media/multi-token_vs_output_len.png", format="png", dpi=140)
-    
-    plt.show()
-        
-        
 
 def train(model, device, optimizer, dataloader):
     model.train()
@@ -471,14 +361,14 @@ if __name__ == "__main__":
 
     model_type = "Transformer"
     #model_type = 'MLP'
-    output_patches = 1
+    output_patches = 2
     ar_steps = 5
     
     output_len = output_patch_len * output_patches
     
     learning_rate = 3e-4
-    batch_size = 32 * 2
-    max_epochs = 5
+    batch_size = 64
+    max_epochs = 3
 
     device = "cpu"
 
@@ -545,7 +435,7 @@ if __name__ == "__main__":
         
     #autoregressive_forecast(model, title=f"{ar_steps} step {model_type}{multitoken} forecast", steps=ar_steps, start_idx=1000)
     
-    #compare_multi_token()
+    compare_multi_token()
 
             
             

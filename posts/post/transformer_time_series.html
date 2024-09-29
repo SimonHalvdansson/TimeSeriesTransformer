@@ -199,31 +199,32 @@ class WeatherDataset(Dataset):
 
 	<pre><code class="language-py">
 class TimeSeriesDataset(Dataset):
-	def __init__(self, points_ds, context_len, output_len, split='train'):
-		full_length = len(points_ds)
-		test_start = floor(full_length * 0.8)
-		train_stop = test_start - context_len * 2
-		
-		if split == 'train':
-			train_len = train_stop
-			self.points = [points_ds[i] for i in range(train_len)]
-		else:
-			self.points = [points_ds[i] for i in range(test_start, full_length)]
-		
-		self.points = torch.stack(self.points)
-		
-		self.context_len = context_len
-		self.output_len = output_len
-		
-	def __len__(self):
-		return len(self.points) - self.context_len - self.output_len
-	
-	def __getitem__(self, idx):
-		series = self.points[idx : idx + self.context_len]
-		target = self.points[idx + self.context_len :
-								idx + self.context_len + self.output_len]
-						
-		return series, target
+    def __init__(self, points_ds, context_len, output_len, split="train"):
+        full_length = len(points_ds)
+        test_start = math.floor(full_length * 0.8)
+        train_stop = test_start - context_len * 2
+
+        if split == "train":
+            train_len = train_stop
+            self.points = [points_ds[i] for i in range(train_len)]
+        else:
+            self.points = [points_ds[i] for i in range(test_start, full_length)]
+
+        self.points = torch.stack(self.points)
+
+        self.context_len = context_len
+        self.output_len = output_len
+
+    def __len__(self):
+        return len(self.points) - self.context_len - self.output_len
+
+    def __getitem__(self, idx):
+        series = self.points[idx : idx + self.context_len]
+        target = self.points[
+            idx + self.context_len : idx + self.context_len + self.output_len
+        ]
+
+        return series, target
 	</code></pre>
 
 	<p>
@@ -495,24 +496,26 @@ def encode_patches(self, x, patches, patch_len, encoder):
 
 	<pre><code class="language-py">
 class SinusoidalPositionalEmbedding(nn.Module):
-	def __init__(self, num_positions, d_model):
-		super(SinusoidalPositionalEmbedding, self).__init__()
-		self.num_positions = num_positions
-		self.d_model = d_model
-		self.register_buffer('pos_embedding', self.create_positional_embedding())
+    def __init__(self, num_positions, d_model):
+        super(SinusoidalPositionalEmbedding, self).__init__()
+        self.num_positions = num_positions
+        self.d_model = d_model
+        self.register_buffer("pos_embedding", self.create_positional_embedding())
 
-	def create_positional_embedding(self):
-		position = torch.arange(0, self.num_positions).unsqueeze(1)
-		div = torch.exp(torch.arange(0, self.d_model, 2) * -(math.log(10000.0) / self.d_model))
-		
-		pos_embedding = torch.zeros(self.num_positions, self.d_model)
-		pos_embedding[:, 0::2] = torch.sin(position * div)
-		pos_embedding[:, 1::2] = torch.cos(position * div)
-		
-		return pos_embedding.unsqueeze(0)
+    def create_positional_embedding(self):
+        position = torch.arange(0, self.num_positions).unsqueeze(1)
+        div = torch.exp(
+            torch.arange(0, self.d_model, 2) * -(math.log(10000.0) / self.d_model)
+        )
 
-	def forward(self):
-		return self.pos_embedding
+        pos_embedding = torch.zeros(self.num_positions, self.d_model)
+        pos_embedding[:, 0::2] = torch.sin(position * div)
+        pos_embedding[:, 1::2] = torch.cos(position * div)
+
+        return pos_embedding.unsqueeze(0)
+
+    def forward(self):
+        return self.pos_embedding
 	</code></pre>
 
 	<p>
@@ -520,22 +523,28 @@ class SinusoidalPositionalEmbedding(nn.Module):
 	</p>
 	
 	<pre><code class="language-py">
-self.patch_decoder = ResidualBlock(input_dim = d_model,           
-									output_dim = output_patch_len,
-									hidden_dim = d_model,
-									dropout = 0,
-									apply_ln = False)
+self.patch_decoder = ResidualBlock(
+    input_dim=d_model,
+    output_dim=output_patch_len,
+    hidden_dim=d_model,
+    dropout=0,
+    apply_ln=False,
+)
 
-self.pos_embedding = SinusoidalPositionalEmbedding(self.patches, d_model)
+self.pos_embedding = SinusoidalPositionalEmbedding(self.tokens, d_model)
 
-self.transformer_layers = nn.ModuleList([
-	nn.TransformerEncoderLayer(d_model,
-								num_heads,
-								dim_feedforward=d_model * 4,
-								dropout=dropout,
-								batch_first=True)
-	for _ in range(num_layers)
-])
+self.transformer_layers = nn.ModuleList(
+    [
+        nn.TransformerEncoderLayer(
+            d_model,
+            num_heads,
+            dim_feedforward=d_model * 4,
+            dropout=dropout,
+            batch_first=True,
+        )
+        for _ in range(num_layers)
+    ]
+)
 	</code></pre>
 
 	<p>
@@ -544,82 +553,93 @@ self.transformer_layers = nn.ModuleList([
 
 	<pre><code class="language-py" id="full_model">
 class TimeSeriesTransformer(nn.Module):
-	def __init__(self,
-					context_len,
-					patch_len,
-					output_patch_len,
-					d_model,
-					n_fft,
-					num_heads,
-					num_layers,
-					dropout):
-		super().__init__()
+    def __init__(
+        self,
+        context_len,
+        patch_len,
+        output_patch_len,
+        output_len,
+        d_model,
+        num_heads,
+        num_layers,
+        dropout,
+    ):
+        super().__init__()
 
-		self.output_patch_len = output_patch_len
-		
-		self.patch_len = patch_len
-		self.patches = context_len // patch_len
-						
-		self.patch_encoder = ResidualBlock(input_dim = patch_len,
-								output_dim = d_model,
-								hidden_dim = d_model,
-								dropout = dropout,
-								apply_ln = True)
+        self.output_patch_len = output_patch_len
 
-		self.patch_decoder = ResidualBlock(input_dim = d_model,
-								output_dim = output_patch_len,
-								hidden_dim = d_model,
-								dropout = 0,
-								apply_ln = False)
-		
-		self.pos_embedding = SinusoidalPositionalEmbedding(self.patches, d_model)
-		self.tgt_mask = self.causal_mask(self.patches)
-		
-		self.transformer_layers = nn.ModuleList([
-			nn.TransformerEncoderLayer(d_model,
-										num_heads,
-										dim_feedforward=d_model * 4,
-										dropout=dropout,
-										batch_first=True)
-			for _ in range(num_layers)
-		])
-		
+        self.patch_len = patch_len
+        self.patches = context_len // patch_len
 
-	def encode_patches(self, x, patches, patch_len, encoder):
-		x = x.view(x.shape[0], patches, patch_len)
-		encoded_patches = []
-		
-		for i in range(patches):
-			patch_data = x[:, i, :].flatten(start_dim=1)
-			encoded_patch = encoder(patch_data)
-			encoded_patches.append(encoded_patch)
-			
-		return encoded_patches
+        self.patch_encoder = ResidualBlock(
+            input_dim=patch_len,
+            output_dim=d_model,
+            hidden_dim=d_model,
+            dropout=dropout,
+            apply_ln=True,
+        )
 
-	def forward(self, x):        
-		x, m, s = normalize(x)
-								
-		encoded_patches = self.encode_patches(
-			x, self.patches, self.patch_len, self.patch_encoder
-		)
+        self.patch_decoder = ResidualBlock(
+            input_dim=d_model,
+            output_dim=output_patch_len,
+            hidden_dim=d_model,
+            dropout=0,
+            apply_ln=False,
+        )
 
-		x = torch.stack(encoded_patches, dim=1)
-				
-		x = x + self.pos_embedding()
-				
-		for layer in self.transformer_layers:
-			x = layer(x, src_mask=self.tgt_mask, is_causal=True)
-		
-		x = x[:, -1, :]
-		x = self.patch_decoder(x)
-		
-		x = un_normalize(x, m, s)
-		
-		return x
-	
-	def causal_mask(self, sz):
-		mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
-		return mask
+        self.pos_embedding = SinusoidalPositionalEmbedding(self.tokens, d_model)
+
+        self.transformer_layers = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model,
+                    num_heads,
+                    dim_feedforward=d_model * 4,
+                    dropout=dropout,
+                    batch_first=True,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+        self.register_buffer("tgt_mask", self.causal_mask(self.tokens))
+
+    def encode_patches(self, x, patches, patch_len, encoder):
+        x = x.view(x.shape[0], patches, patch_len)
+        encoded_patches = []
+
+        for i in range(patches):
+            patch_data = x[:, i, :].flatten(start_dim=1)
+            encoded_patch = encoder(patch_data)
+            encoded_patches.append(encoded_patch)
+
+        return encoded_patches
+
+    def forward(self, x):
+        x, m, s = normalize(x)
+
+        encoded_patches = self.encode_patches(
+            x, self.patches, self.patch_len, self.patch_encoder
+        )
+
+        x = torch.stack(encoded_patches, dim=1)
+        x = torch.cat((x, self.output_tokens.repeat(x.shape[0], 1, 1)), dim=1)
+
+        x = x + self.pos_embedding()
+
+        for layer in self.transformer_layers:
+            x = layer(x, src_mask=self.tgt_mask, is_causal=True)
+
+        x = x[:, -1, :]
+        x = self.patch_decoder(x)
+
+        x = un_normalize(x, m, s)
+
+        return x
+
+    def causal_mask(self, sz):
+        mask = torch.triu(torch.ones(sz, sz) * float("-inf"), diagonal=1)
+        return mask
 	</code></pre>
 
 	<p>
@@ -705,7 +725,7 @@ def forward(...):
 	</div>
 
 	<p>
-		The increased output length likely promotes reducing the oscillation frequency of the predictions since we use the mean <span class="boldened"><i>square</i></span> error which punished errors superlinearly. Of course, we can run the multi-token model autoregressively to get even further forecasts.
+		The increased output length likely promotes reducing the oscillation frequency of the predictions since we use the mean <span class="boldened">square</span> error which punished errors superlinearly. Of course, we can run the multi-token model autoregressively to get even further forecasts.
 	</p>
 
 	<div class="figure_container">
@@ -713,24 +733,6 @@ def forward(...):
 			<img class="figure" src="media/5_step_transformer_multi-token_forecast.png"></img>
 		</a>
 	</div>
-
-
-	<p>
-		Next we compare the test performance at <code>output_len = 256, 384, 512, 640</code> between increasing the <code>output_len</code> and <code>output_patches</code>.
-	</p>
-
-	<div class="figure_container_small">
-		<a data-fancybox="gallery5" href="media/multi-token_vs_output_len.png">
-			<img class="figure" src="media/multi-token_vs_output_len.png"></img>
-		</a>
-	</div>
-	<div class="figure_caption">
-		<span class="caption_title">Figure: </span>Performance of multi-token vs. long output length models at the same total output length. Error bars indicate standard error.
-	</div>
-
-	<p>
-		Some thoughts on this.
-	</p>
 
 	<p>
 		We've now gone through most of the model and evaluated it. As mentioned in the introduction, the full TimesFM model has some additional features. Most notable is probably the support for variable input length which is only useful for a model which is meant to be reused in different contexts. Hopefully, you the reader should be better prepared to implement/understand/use other related time series models.
